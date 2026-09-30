@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildJobMarkdown, type JobDocInput } from './jobMarkdown.ts';
+import { buildJobMarkdown, buildJobSections, type JobDocInput } from './jobMarkdown.ts';
 
 const base: JobDocInput = {
   title: 'Postscript - Sr FE',
@@ -46,33 +46,34 @@ describe('buildJobMarkdown', () => {
     expect(fm).toContain('position: "[Engineer \\\\[Remote\\\\]](');
   });
 
-  it('lays out the body using the Job section template, in order', () => {
-    const headings = body(buildJobMarkdown(base))
-      .split('\n')
-      .filter((l) => l.startsWith('### '));
-    expect(headings).toEqual([
-      '### 1st & 2nd Degree Contacts',
-      '### Application Reqs',
-      '### Interactions',
-      '### Next Steps',
-      '### Notes',
-      '### Job Description',
-    ]);
+  it('writes no body, so nothing lands in the first section', () => {
+    const doc = buildJobMarkdown(base);
+    expect(body(doc).trim()).toBe('');
+    expect(doc).not.toContain('###');
+    expect(doc).not.toContain('Optional cover letter');
+    expect(doc).not.toContain('Build things');
+  });
+});
+
+describe('buildJobSections', () => {
+  it('returns application reqs and the description separately', () => {
+    expect(buildJobSections(base)).toEqual({
+      applicationReqs: 'Optional cover letter',
+      jobDescription: '## The Role\n\nBuild things.',
+    });
   });
 
-  it('puts application reqs under their heading and the description last', () => {
-    const b = body(buildJobMarkdown(base));
-    expect(b).toContain('### Application Reqs\n\nOptional cover letter\n\n### Interactions');
-    expect(b.endsWith('### Job Description\n\n## The Role\n\nBuild things.\n')).toBe(true);
+  it('omits application reqs when unknown or blank', () => {
+    expect(buildJobSections({ ...base, applicationReqs: null })).not.toHaveProperty('applicationReqs');
+    expect(buildJobSections({ ...base, applicationReqs: '  \n ' })).not.toHaveProperty('applicationReqs');
   });
 
-  it('leaves Application Reqs empty when unknown', () => {
-    const b = body(buildJobMarkdown({ ...base, applicationReqs: null }));
-    expect(b).toContain('### Application Reqs\n\n### Interactions');
+  it('omits the description when empty', () => {
+    expect(buildJobSections({ ...base, description: '  ' })).not.toHaveProperty('jobDescription');
   });
 
   it('demotes H1s in the description so they do not collide with the object title', () => {
-    const b = body(buildJobMarkdown({ ...base, description: '# Senior Frontend Engineer\n\nText' }));
-    expect(b).toContain('### Job Description\n\n## Senior Frontend Engineer\n\nText');
+    const s = buildJobSections({ ...base, description: '# Senior Frontend Engineer\n\nText' });
+    expect(s.jobDescription).toBe('## Senior Frontend Engineer\n\nText');
   });
 });

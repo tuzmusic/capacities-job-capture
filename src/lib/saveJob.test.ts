@@ -18,10 +18,11 @@ const fields: JobFields = {
   applicationReqs: null,
 };
 
-function deps(overrides: { extract?: Mock; create?: Mock } = {}) {
+function deps(overrides: { extract?: Mock; create?: Mock; appendSection?: Mock } = {}) {
   return {
     extract: vi.fn().mockResolvedValue(fields),
     create: vi.fn().mockResolvedValue({ id: 'obj-9' }),
+    appendSection: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -33,14 +34,14 @@ describe('saveJob', () => {
     expect(d.extract).toHaveBeenCalledWith({ url: capture.url, title: capture.title, text: capture.text });
   });
 
-  it('creates the object from markdown built with the AI fields and the verbatim description', async () => {
+  it('creates the object from frontmatter built with the AI fields', async () => {
     const d = deps();
     await saveJob(capture, d);
     const markdown: string = d.create.mock.calls[0][0];
     expect(markdown).toContain('title: "RevenueCat - FS/Product"');
     expect(markdown).toContain(`position: "[Senior Software Engineer, Product](${capture.url})"`);
     expect(markdown).toContain('salaryRange: "$227K + equity"');
-    expect(markdown).toContain('### Job Description\n\n## The Role\n\nShip.');
+    expect(markdown).not.toContain('###');
   });
 
   it('reports success with the title and object id', async () => {
@@ -77,5 +78,42 @@ describe('saveJob', () => {
   it('reports Capacities failures', async () => {
     const d = deps({ create: vi.fn().mockRejectedValue(new Error('Capacities error 400: bad')) });
     await expect(saveJob(capture, d)).resolves.toEqual({ status: 'error', message: 'Capacities error 400: bad' });
+  });
+
+  describe('body sections', () => {
+    const grafana: PageCapture = {
+      ...capture,
+      descriptionMarkdown: 'Grafana Labs is the company behind Grafana Cloud.\n\n## The opportunity\n\nBuild RUM.',
+    };
+    const reqs = '- Resume/CV required\n- LinkedIn Profile required\n- Custom questions:\n  - How did you hear about us?';
+
+    it('puts application reqs and the description each into their own section, and nothing else', async () => {
+      const d = deps({ extract: vi.fn().mockResolvedValue({ ...fields, applicationReqs: reqs }) });
+      await saveJob(grafana, d);
+      expect(d.appendSection.mock.calls).toEqual([
+        ['obj-9', 'applicationReqs', reqs],
+        ['obj-9', 'jobDescription', grafana.descriptionMarkdown],
+      ]);
+    });
+
+    it('creates the object before appending to it', async () => {
+      const d = deps();
+      await saveJob(grafana, d);
+      expect(d.create.mock.invocationCallOrder[0]).toBeLessThan(d.appendSection.mock.invocationCallOrder[0]);
+    });
+
+    it('skips application reqs when the page shows none', async () => {
+      const d = deps();
+      await saveJob(grafana, d);
+      expect(d.appendSection.mock.calls.map((c) => c[1])).toEqual(['jobDescription']);
+    });
+
+    it('says which section failed, and that the Job itself exists', async () => {
+      const d = deps({ appendSection: vi.fn().mockRejectedValue(new Error('Capacities error 400: bad')) });
+      await expect(saveJob(grafana, d)).resolves.toEqual({
+        status: 'error',
+        message: "Job created, but its Job Description couldn't be saved: Capacities error 400: bad",
+      });
+    });
   });
 });

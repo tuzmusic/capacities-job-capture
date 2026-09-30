@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import captureScript from '../content/capture.ts?script&iife';
-import { createObjectFromMarkdown } from '../lib/capacities.ts';
+import { appendBlocks, createObjectFromMarkdown, JOB_SECTION_PROPERTY_IDS } from '../lib/capacities.ts';
 import { extractFields } from '../lib/extractFields.ts';
 import { showOverlay, type OverlayState } from '../lib/overlay.ts';
 import type { PageCapture } from '../lib/pageCapture.ts';
@@ -56,6 +56,8 @@ async function saveCurrentTab(tab: chrome.tabs.Tab) {
     result = await saveJob(withTabUrl, {
       extract: (page) => extractFields(anthropic, page),
       create: (markdown) => createObjectFromMarkdown({ fetch, token: capacitiesApiToken, markdown }),
+      appendSection: (id, section, markdown) =>
+        appendBlocks({ fetch, token: capacitiesApiToken, id, propertyId: JOB_SECTION_PROPERTY_IDS[section], markdown }),
     });
   } catch (err) {
     result = { status: 'error', message: err instanceof Error ? err.message : String(err) };

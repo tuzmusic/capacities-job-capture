@@ -44,8 +44,8 @@ Everything testable lives in `src/lib/` and takes its dependencies (API clients,
 | `pickBestCapture.ts` | Picks the frame with the most text |
 | `sectionFilter.ts` | Drops benefits/EEO/etc. sections by heading |
 | `extractFields.ts` | Claude Haiku structured output → title, full title, salary, application reqs |
-| `jobMarkdown.ts` | Builds the frontmatter + body in the Job section template |
-| `capacities.ts` | `POST /object/markdown` |
+| `jobMarkdown.ts` | Builds the frontmatter, and the markdown for each body section (Application Reqs, Job Description) |
+| `capacities.ts` | `POST /object/markdown` (properties), `POST /blocks/append` (body sections, by property id) |
 | `saveJob.ts` | Orchestrates the above, returns `saved` / `error` |
 | `overlay.ts` | The in-page status dialog (self-contained, injected with `executeScript`) |
 

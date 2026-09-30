@@ -1,6 +1,8 @@
+import type { JobSection } from './capacities.ts';
+
 /**
- * Builds the markdown document sent to Capacities' `POST /object/markdown`: YAML frontmatter for the Job type's
- * properties, then the body in the same section layout used for hand-made Jobs.
+ * Builds what we send to Capacities: YAML frontmatter for the Job type's properties (`POST /object/markdown`), and the
+ * markdown for each body section (`POST /blocks/append`).
  */
 export interface JobDocInput {
   /** Object title, e.g. "Postscript - Sr FE". */
@@ -15,15 +17,6 @@ export interface JobDocInput {
 
 export const DEFAULT_STATUS = 'Info Gathering';
 
-const BODY_SECTIONS = [
-  '1st & 2nd Degree Contacts',
-  'Application Reqs',
-  'Interactions',
-  'Next Steps',
-  'Notes',
-  'Job Description',
-] as const;
-
 /** JSON strings are valid YAML double-quoted scalars. */
 const yamlString = (s: string) => JSON.stringify(s);
 
@@ -31,6 +24,7 @@ const escapeLinkText = (s: string) => s.replace(/[[\]\\]/g, (c) => `\\${c}`);
 
 const demoteH1s = (md: string) => md.replace(/^# /gm, '## ');
 
+/** Frontmatter only. The body sections are filled separately (see `buildJobSections`), each into its own property. */
 export function buildJobMarkdown(input: JobDocInput): string {
   const fm: [string, string][] = [
     ['title', input.title],
@@ -39,15 +33,15 @@ export function buildJobMarkdown(input: JobDocInput): string {
   ];
   if (input.salaryRange) fm.push(['salaryRange', input.salaryRange]);
 
-  const content: Partial<Record<(typeof BODY_SECTIONS)[number], string | null>> = {
-    'Application Reqs': input.applicationReqs,
-    'Job Description': demoteH1s(input.description.trim()),
-  };
+  return `---\n${fm.map(([k, v]) => `${k}: ${yamlString(v)}`).join('\n')}\n---\n`;
+}
 
-  const body = BODY_SECTIONS.map((heading) => {
-    const text = content[heading]?.trim();
-    return text ? `### ${heading}\n\n${text}\n` : `### ${heading}\n`;
-  }).join('\n');
-
-  return `---\n${fm.map(([k, v]) => `${k}: ${yamlString(v)}`).join('\n')}\n---\n\n${body}`;
+/** Markdown for each body section we fill; empty ones are omitted. */
+export function buildJobSections(input: Pick<JobDocInput, 'applicationReqs' | 'description'>): Partial<Record<JobSection, string>> {
+  const sections: Partial<Record<JobSection, string>> = {};
+  const reqs = input.applicationReqs?.trim();
+  if (reqs) sections.applicationReqs = reqs;
+  const description = demoteH1s(input.description.trim());
+  if (description) sections.jobDescription = description;
+  return sections;
 }
