@@ -1,0 +1,49 @@
+import { describe, expect, it, vi } from 'vitest';
+import { createObjectFromMarkdown, JOB_STRUCTURE_ID } from './capacities.ts';
+
+function fakeFetch(status: number, body: unknown) {
+  return vi.fn().mockResolvedValue(
+    new Response(typeof body === 'string' ? body : JSON.stringify(body), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    }),
+  );
+}
+
+describe('createObjectFromMarkdown', () => {
+  it('POSTs the markdown and structure id to /object/markdown with a bearer token', async () => {
+    const fetch = fakeFetch(200, { id: 'obj-1', structureId: JOB_STRUCTURE_ID });
+    await createObjectFromMarkdown({ fetch, token: 'cap-api-abc', markdown: '---\ntitle: "x"\n---\n' });
+
+    const [url, init] = fetch.mock.calls[0];
+    expect(url).toBe('https://api.capacities.io/object/markdown');
+    expect(init.method).toBe('POST');
+    expect(init.headers.Authorization).toBe('Bearer cap-api-abc');
+    expect(init.headers['Content-Type']).toBe('application/json');
+    expect(JSON.parse(init.body)).toEqual({ structureId: JOB_STRUCTURE_ID, markdown: '---\ntitle: "x"\n---\n' });
+  });
+
+  it('returns the new object id', async () => {
+    const fetch = fakeFetch(200, { id: 'obj-1', structureId: JOB_STRUCTURE_ID });
+    await expect(createObjectFromMarkdown({ fetch, token: 't', markdown: 'm' })).resolves.toEqual({ id: 'obj-1' });
+  });
+
+  it('explains a rejected token', async () => {
+    const fetch = fakeFetch(401, { error: 'unauthorized' });
+    await expect(createObjectFromMarkdown({ fetch, token: 't', markdown: 'm' })).rejects.toThrow(
+      /Capacities rejected the API token/,
+    );
+  });
+
+  it('explains rate limiting', async () => {
+    const fetch = fakeFetch(429, {});
+    await expect(createObjectFromMarkdown({ fetch, token: 't', markdown: 'm' })).rejects.toThrow(/rate limit/i);
+  });
+
+  it('includes status and response body for other failures', async () => {
+    const fetch = fakeFetch(400, { message: 'Invalid frontmatter' });
+    await expect(createObjectFromMarkdown({ fetch, token: 't', markdown: 'm' })).rejects.toThrow(
+      /400.*Invalid frontmatter/,
+    );
+  });
+});

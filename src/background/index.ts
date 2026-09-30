@@ -1,0 +1,67 @@
+import Anthropic from '@anthropic-ai/sdk';
+import captureScript from '../content/capture.ts?script&iife';
+import { createObjectFromMarkdown } from '../lib/capacities.ts';
+import { extractFields } from '../lib/extractFields.ts';
+import { showOverlay, type OverlayState } from '../lib/overlay.ts';
+import type { PageCapture } from '../lib/pageCapture.ts';
+import { pickBestCapture } from '../lib/pickBestCapture.ts';
+import { saveJob, type SaveResult } from '../lib/saveJob.ts';
+import { loadSettings } from '../lib/settings.ts';
+
+const BADGE: Record<OverlayState['status'], { text: string; color: string }> = {
+  saving: { text: '…', color: '#8e8e93' },
+  saved: { text: '✓', color: '#2e9d5b' },
+  error: { text: '✗', color: '#d93a3a' },
+};
+
+async function show(tabId: number, state: OverlayState) {
+  const badge = BADGE[state.status];
+  await chrome.action.setBadgeText({ tabId, text: badge.text });
+  await chrome.action.setBadgeBackgroundColor({ tabId, color: badge.color });
+  await chrome.scripting.executeScript({ target: { tabId }, func: showOverlay, args: [state] }).catch(() => {});
+}
+
+/** Captures every frame and keeps the richest one, so embedded ATS iframes (?gh_jid=...) are covered. */
+async function captureTab(tabId: number): Promise<PageCapture | null> {
+  const run = async (allFrames: boolean) => {
+    const target = { tabId, allFrames };
+    await chrome.scripting.executeScript({ target, files: [captureScript] });
+    const results = await chrome.scripting.executeScript({
+      target,
+      func: () =>
+        (globalThis as { __capacitiesJobCapture?: () => unknown }).__capacitiesJobCapture?.() ?? null,
+    });
+    return pickBestCapture(results.map((r) => r.result as PageCapture | null));
+  };
+  // One uninjectable frame (sandboxed ad iframe, etc.) can fail the all-frames call; fall back to the top frame.
+  return run(true).catch(() => run(false));
+}
+
+async function saveCurrentTab(tab: chrome.tabs.Tab) {
+  const tabId = tab.id;
+  if (tabId === undefined) return;
+
+  const loaded = await loadSettings(chrome.storage.local);
+  if (!loaded.ok) return show(tabId, { status: 'error', message: loaded.message });
+  const { anthropicApiKey, capacitiesApiToken } = loaded.settings;
+
+  await show(tabId, { status: 'saving' });
+
+  let result: SaveResult;
+  try {
+    const capture = await captureTab(tabId);
+    // Link the posting as you see it in the address bar, even if the content came from an embedded frame.
+    const withTabUrl = capture && tab.url ? { ...capture, url: tab.url } : capture;
+    const anthropic = new Anthropic({ apiKey: anthropicApiKey, dangerouslyAllowBrowser: true });
+    result = await saveJob(withTabUrl, {
+      extract: (page) => extractFields(anthropic, page),
+      create: (markdown) => createObjectFromMarkdown({ fetch, token: capacitiesApiToken, markdown }),
+    });
+  } catch (err) {
+    result = { status: 'error', message: err instanceof Error ? err.message : String(err) };
+  }
+
+  await show(tabId, result);
+}
+
+chrome.action.onClicked.addListener((tab) => void saveCurrentTab(tab));

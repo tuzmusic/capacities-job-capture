@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Capacities Job Capture: Options</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 520px; margin: 32px auto; padding: 0 16px; }
+      label { display: block; margin-top: 16px; font-weight: 600; }
+      input { display: block; width: 100%; box-sizing: border-box; margin-top: 4px; padding: 6px 8px; font: inherit; }
+      .hint { font-weight: normal; opacity: 0.7; }
+      button { margin-top: 20px; padding: 6px 14px; font: inherit; }
+      #status { margin-left: 8px; }
+    </style>
+  </head>
+  <body>
+    <h1>Capacities Job Capture</h1>
+    <p>Keys are stored in this browser only (<code>chrome.storage.local</code>).</p>
+    <form id="form">
+      <label>Anthropic API key <span class="hint">(console.anthropic.com)</span>
+        <input id="anthropicApiKey" type="password" autocomplete="off" spellcheck="false" />
+      </label>
+      <label>Capacities API token <span class="hint">(Capacities → Settings → Capacities API)</span>
+        <input id="capacitiesApiToken" type="password" autocomplete="off" spellcheck="false" />
+      </label>
+      <button type="submit">Save</button><span id="status"></span>
+    </form>
+    <script type="module" src="./options.ts"></script>
+  </body>
+</html>
