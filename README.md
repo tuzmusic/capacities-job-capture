@@ -9,7 +9,8 @@ Chrome extension (MV3): one click saves the job posting in the current tab as a 
   fields are dropped in code (`src/lib/formFields.ts`); Haiku judges the free-text fields that remain.
 - **Separate apply pages:** if the form isn't on the page you captured, it looks for it. Greenhouse jobs go through
   Greenhouse's public job board API. Lever (`/apply`), Ashby (`/application`), and any page's own "Apply" link are
-  opened in a background tab, captured, and closed. Workday, iCIMS, Taleo and the like aren't opened (login walls,
+  opened in a background tab, captured, and closed. With no link, an in-page "Apply" button (modal, tab, client-side
+  route) is clicked in a background copy of the posting instead, so your tab is left alone. Workday, iCIMS, Taleo and the like aren't opened (login walls,
   multi-step forms). When the form still can't be read, Haiku adds a short reason, like "(Workday)" or "(needs login)".
 - **easy-apply** tag is added when there's no required cover letter and no questions at all (an optional cover letter
   doesn't count, optional questions do). Only when the application form was found; otherwise Application Reqs says to check.
@@ -50,7 +51,7 @@ Everything testable lives in `src/lib/` and takes its dependencies (API clients,
 | Module | Does |
 |---|---|
 | `pageCapture.ts` | Page → `{ url, title, text, descriptionMarkdown, applicationForm }` (runs inside the page) |
-| `applyLink.ts` | Where the apply page is, when the form isn't on this one (runs inside the page) |
+| `applyLink.ts` | Where the apply page or in-page Apply button is, when the form isn't on this page (runs inside the page) |
 | `findApplicationForm.ts` | Gets the form from the Greenhouse API or a background tab |
 | `greenhouse.ts` | Greenhouse job board API → the same form fields the page reader produces |
 | `formFields.ts` | The application form's free-text fields and cover letter upload, choices and contact fields dropped |

@@ -12,6 +12,7 @@ const capture = (over: Partial<PageCapture> = {}): PageCapture => ({
   descriptionMarkdown: '',
   applicationForm: noForm,
   applyUrl: null,
+  applyButton: false,
   ...over,
 });
 
@@ -52,7 +53,7 @@ describe('findApplicationForm', () => {
   it('opens other apply pages and uses their form', async () => {
     const d = deps(capture({ applicationForm: someForm }));
     const result = await findApplicationForm(capture({ applyUrl: 'https://jobs.lever.co/acme/x/apply' }), d);
-    expect(d.capturePage).toHaveBeenCalledWith('https://jobs.lever.co/acme/x/apply');
+    expect(d.capturePage).toHaveBeenCalledWith('https://jobs.lever.co/acme/x/apply', undefined);
     expect(result).toEqual({ form: someForm, missedApplyPage: null });
   });
 
@@ -60,6 +61,19 @@ describe('findApplicationForm', () => {
     const d = deps(capture({ text: 'Sign in to apply' }));
     const result = await findApplicationForm(capture({ applyUrl: 'https://acme.com/apply' }), d);
     expect(result).toEqual({ form: noForm, missedApplyPage: { url: 'https://acme.com/apply', text: 'Sign in to apply' } });
+  });
+
+  it('reopens the posting and clicks its in-page Apply button when there is no apply link', async () => {
+    const d = deps(capture({ applicationForm: someForm }));
+    const result = await findApplicationForm(capture({ applyButton: true }), d);
+    expect(d.capturePage).toHaveBeenCalledWith('https://acme.com/careers/1', { clickApply: true });
+    expect(result).toEqual({ form: someForm, missedApplyPage: null });
+  });
+
+  it('reports what the page showed after clicking Apply, when still no form', async () => {
+    const d = deps(capture({ text: 'Create an account to apply' }));
+    const result = await findApplicationForm(capture({ applyButton: true }), d);
+    expect(result.missedApplyPage).toEqual({ url: 'https://acme.com/careers/1', text: 'Create an account to apply' });
   });
 
   it("doesn't open Workday and friends", async () => {

@@ -60,17 +60,42 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** Client-rendered apply pages (Ashby, etc.) draw the form a moment after load; keep looking this long. */
 const FORM_RENDER_WAIT_MS = 6000;
 
-/** Opens `url` in a background tab next to the job, captures it once the form shows up (or we give up), and closes it. */
-async function captureInBackgroundTab(url: string, nextTo: chrome.tabs.Tab): Promise<PageCapture | null> {
+/** Clicks the "Apply" button in whichever frame has one (the capture script must already be injected). */
+async function clickApply(tabId: number): Promise<void> {
+  await chrome.scripting
+    .executeScript({
+      target: { tabId, allFrames: true },
+      func: () => (globalThis as { __capacitiesJobClickApply?: () => boolean }).__capacitiesJobClickApply?.() ?? false,
+    })
+    .catch(() => {});
+}
+
+/** A click before the page's scripts have hooked up the button does nothing, so try a few times, spaced out. */
+const MAX_APPLY_CLICKS = 3;
+const POLLS_BETWEEN_CLICKS = 3;
+
+/**
+ * Opens `url` in a background tab next to the job, captures it once the form shows up (or we give up), and closes it.
+ * With `clickApply`, it's the posting itself, with an "Apply" button that reveals the form in place: click it first.
+ * Doing this in a separate tab leaves the user's own tab alone.
+ */
+async function captureInBackgroundTab(
+  url: string,
+  nextTo: chrome.tabs.Tab,
+  { clickApply: shouldClick = false } = {},
+): Promise<PageCapture | null> {
   const tab = await chrome.tabs.create({ url, active: false, windowId: nextTo.windowId, index: nextTo.index + 1 });
   const tabId = tab.id!;
   try {
     await waitForLoad(tabId, 15000);
     const deadline = Date.now() + FORM_RENDER_WAIT_MS;
     let capture: PageCapture | null = null;
-    while (true) {
+    for (let poll = 0; ; poll++) {
       capture = await captureTab(tabId).catch(() => null);
       if (capture?.applicationForm.found || Date.now() > deadline) return capture;
+      if (shouldClick && poll % POLLS_BETWEEN_CLICKS === 0 && poll / POLLS_BETWEEN_CLICKS < MAX_APPLY_CLICKS) {
+        await clickApply(tabId);
+      }
       await sleep(500);
     }
   } finally {
@@ -95,7 +120,7 @@ async function saveCurrentTab(tab: chrome.tabs.Tab) {
     const withTabUrl = capture && tab.url ? { ...capture, url: tab.url } : capture;
     const anthropic = new Anthropic({ apiKey: anthropicApiKey, dangerouslyAllowBrowser: true });
     result = await saveJob(withTabUrl, {
-      findForm: (c) => findApplicationForm(c, { fetch, capturePage: (url) => captureInBackgroundTab(url, tab) }),
+      findForm: (c) => findApplicationForm(c, { fetch, capturePage: (url, opts) => captureInBackgroundTab(url, tab, opts) }),
       extract: (page) => extractFields(anthropic, page),
       create: (markdown) => createObjectFromMarkdown({ fetch, token: capacitiesApiToken, markdown }),
       appendSection: (id, section, markdown) =>

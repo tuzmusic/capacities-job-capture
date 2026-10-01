@@ -67,6 +67,7 @@ describe('pickBestCapture', () => {
     descriptionMarkdown: '',
     applicationForm: { found: false, fields: [] },
     applyUrl: null,
+    applyButton: false,
   });
 
   it('picks the frame with the most text (e.g. an embedded ATS iframe over a thin careers shell)', () => {
@@ -91,6 +92,12 @@ describe('pickBestCapture', () => {
     const posting = cap('https://acme.com/careers/1', 9000);
     const other = { ...cap('https://acme.com/widget', 300), applyUrl: 'https://acme.com/apply/1' };
     expect(pickBestCapture([posting, other])?.applyUrl).toBe('https://acme.com/apply/1');
+  });
+
+  it('flags an in-page Apply button found in any frame', () => {
+    const posting = cap('https://acme.com/careers/1', 9000);
+    const other = { ...cap('https://acme.com/widget', 300), applyButton: true };
+    expect(pickBestCapture([posting, other])?.applyButton).toBe(true);
   });
 
   it('returns null when nothing was captured', () => {

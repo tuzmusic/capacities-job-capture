@@ -11,8 +11,8 @@ export interface FormLookup {
 
 export interface FormLookupDeps {
   fetch: typeof globalThis.fetch;
-  /** Loads a URL out of sight and captures it like the current tab. */
-  capturePage: (url: string) => Promise<PageCapture | null>;
+  /** Loads a URL out of sight and captures it like the current tab, first clicking its "Apply" button if asked. */
+  capturePage: (url: string, opts?: { clickApply?: boolean }) => Promise<PageCapture | null>;
 }
 
 /** Login walls and multi-step wizards: opening them only costs time. The URL alone tells the AI what they are. */
@@ -23,7 +23,10 @@ const SNIPPET_CHARS = 600;
 
 export async function findApplicationForm(capture: PageCapture, deps: FormLookupDeps): Promise<FormLookup> {
   const { applicationForm, applyUrl } = capture;
-  if (applicationForm.found || !applyUrl) return { form: applicationForm, missedApplyPage: null };
+  if (applicationForm.found) return { form: applicationForm, missedApplyPage: null };
+  if (!applyUrl) {
+    return capture.applyButton ? openAndLook(capture, capture.url, deps, { clickApply: true }) : { form: applicationForm, missedApplyPage: null };
+  }
 
   const greenhouse = parseGreenhouseUrl(applyUrl);
   if (greenhouse) {
@@ -33,10 +36,19 @@ export async function findApplicationForm(capture: PageCapture, deps: FormLookup
 
   if (NOT_WORTH_OPENING.test(applyUrl)) return { form: applicationForm, missedApplyPage: { url: applyUrl, text: '' } };
 
-  const page = await deps.capturePage(applyUrl).catch(() => null);
+  return openAndLook(capture, applyUrl, deps);
+}
+
+async function openAndLook(
+  capture: PageCapture,
+  url: string,
+  deps: FormLookupDeps,
+  opts?: { clickApply: boolean },
+): Promise<FormLookup> {
+  const page = await deps.capturePage(url, opts).catch(() => null);
   if (page?.applicationForm.found) return { form: page.applicationForm, missedApplyPage: null };
   return {
-    form: applicationForm,
-    missedApplyPage: { url: applyUrl, text: (page?.text ?? '').slice(0, SNIPPET_CHARS) },
+    form: capture.applicationForm,
+    missedApplyPage: { url, text: (page?.text ?? '').slice(0, SNIPPET_CHARS) },
   };
 }

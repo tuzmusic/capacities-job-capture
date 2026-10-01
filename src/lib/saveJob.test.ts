@@ -10,6 +10,7 @@ const capture: PageCapture = {
   descriptionMarkdown: '## The Role\n\nShip.',
   applicationForm: { found: true, fields: [{ kind: 'long text', label: 'Why RevenueCat?', required: true }] },
   applyUrl: null,
+  applyButton: false,
 };
 
 const fields: JobFields = {
