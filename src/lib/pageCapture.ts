@@ -1,5 +1,6 @@
 import { Readability } from '@mozilla/readability';
 import TurndownService from 'turndown';
+import { readApplicationForm, type ApplicationForm } from './formFields.ts';
 import { filterSections } from './sectionFilter.ts';
 
 /** What one frame of the tab yields. Runs inside the page (injected), so it must only use DOM APIs. */
@@ -10,6 +11,8 @@ export interface PageCapture {
   text: string;
   /** Main posting content as markdown, with unwanted sections dropped: goes into the object verbatim. */
   descriptionMarkdown: string;
+  /** The application form's free-text fields, if the form is on this page. */
+  applicationForm: ApplicationForm;
 }
 
 /** Below this, Readability probably grabbed a fragment rather than the posting. */
@@ -34,5 +37,6 @@ export function capturePage(doc: Document, url: string): PageCapture {
     title: doc.title,
     text: tidy(body?.innerText || body?.textContent || ''),
     descriptionMarkdown: filterSections(tidy(turndown.turndown(mainContentHtml(doc)))),
+    applicationForm: readApplicationForm(doc),
   };
 }

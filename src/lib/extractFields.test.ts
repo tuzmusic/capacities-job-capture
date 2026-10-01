@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
-import { extractFields, EXTRACTION_MODEL, type JobFields, type ParseClient } from './extractFields.ts';
+import { extractFields, EXTRACTION_MODEL, type JobFields, type PageForExtraction, type ParseClient } from './extractFields.ts';
 
 const fields: JobFields = {
   company: 'Postscript',
   title: 'Postscript - Sr FE',
   fullTitle: 'Senior Frontend Engineer',
   salaryRange: '$172K–$203K + equity',
-  applicationReqs: 'Optional cover letter',
+  coverLetter: 'optional',
+  applicationQuestions: [{ question: 'Why Postscript?', required: true }],
 };
 
 function fakeClient(response: Partial<{ parsed_output: unknown; stop_reason: string }>) {
@@ -14,7 +15,18 @@ function fakeClient(response: Partial<{ parsed_output: unknown; stop_reason: str
   return { client: { messages: { parse } } as unknown as ParseClient, parse };
 }
 
-const page = { url: 'https://jobs.lever.co/acme/123', title: 'Acme - Staff Engineer', text: 'Staff Engineer at Acme...' };
+const page: PageForExtraction = {
+  url: 'https://jobs.lever.co/acme/123',
+  title: 'Acme - Staff Engineer',
+  text: 'Staff Engineer at Acme...',
+  applicationForm: {
+    found: true,
+    fields: [
+      { kind: 'long text', label: 'Why Acme?', required: true },
+      { kind: 'short text', label: 'How did you hear about us?', required: false },
+    ],
+  },
+};
 
 describe('extractFields', () => {
   it('returns the parsed fields', async () => {
@@ -38,6 +50,19 @@ describe('extractFields', () => {
     expect(content).toContain(page.url);
     expect(content).toContain(page.title);
     expect(content).toContain(page.text);
+  });
+
+  it('sends the pre-filtered application form fields with their kind and required flag', async () => {
+    const { client, parse } = fakeClient({ parsed_output: fields });
+    await extractFields(client, page);
+    const content = String(parse.mock.calls[0][0].messages[0].content);
+    expect(content).toContain('<application_form>\n- [long text, required] Why Acme?\n- [short text, optional] How did you hear about us?\n</application_form>');
+  });
+
+  it('says so when the page has no application form', async () => {
+    const { client, parse } = fakeClient({ parsed_output: fields });
+    await extractFields(client, { ...page, applicationForm: { found: false, fields: [] } });
+    expect(String(parse.mock.calls[0][0].messages[0].content)).toContain('No application form on this page.');
   });
 
   it('tells the model the short-title convention with real examples', async () => {

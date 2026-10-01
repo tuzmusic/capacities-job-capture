@@ -65,6 +65,7 @@ describe('pickBestCapture', () => {
     title: '',
     text: 'x'.repeat(textLength),
     descriptionMarkdown: '',
+    applicationForm: { found: false, fields: [] },
   });
 
   it('picks the frame with the most text (e.g. an embedded ATS iframe over a thin careers shell)', () => {
@@ -76,6 +77,13 @@ describe('pickBestCapture', () => {
   it('ignores missing results from frames where capture failed', () => {
     const only = cap('https://a.com', 10);
     expect(pickBestCapture([null, undefined, only])).toBe(only);
+  });
+
+  it('borrows the application form from another frame when the posting frame has none', () => {
+    const posting = cap('https://acme.com/careers/1', 9000);
+    const form = { found: true, fields: [{ kind: 'long text' as const, label: 'Why us?', required: true }] };
+    const formFrame = { ...cap('https://boards.greenhouse.io/embed/job_app', 300), applicationForm: form };
+    expect(pickBestCapture([posting, formFrame])).toEqual({ ...posting, applicationForm: form });
   });
 
   it('returns null when nothing was captured', () => {

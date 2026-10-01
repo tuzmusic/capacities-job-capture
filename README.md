@@ -4,6 +4,11 @@ Chrome extension (MV3): one click saves the job posting in the current tab as a 
 
 - **Title, Position, Salary range, Application Reqs** are filled by Claude Haiku from the page text (one call, well
   under a cent).
+- **Application Reqs** always starts with *Cover letter (required)*, *Optional cover letter*, or *No cover letter!*,
+  then lists only the questions that take work. Choice fields (selects, comboboxes, checkboxes, radios) and contact
+  fields are dropped in code (`src/lib/formFields.ts`); Haiku judges the free-text fields that remain.
+- **easy-apply** tag is added when there's no required cover letter and no questions at all (an optional cover letter
+  doesn't count, optional questions do). Only when the application form is on the captured page; otherwise Application Reqs says to check.
 - **Job Description** is copied verbatim (Readability → markdown). Sections like Benefits, Perks, "Why join us", and EEO
   are dropped by heading, with no AI involved. The patterns are in `src/lib/sectionFilter.ts` (`DROP_HEADINGS`).
 - **Status** defaults to *Info Gathering*. Everything else is left for you.
@@ -40,11 +45,12 @@ Everything testable lives in `src/lib/` and takes its dependencies (API clients,
 
 | Module | Does |
 |---|---|
-| `pageCapture.ts` | Page → `{ url, title, text, descriptionMarkdown }` (runs inside the page) |
+| `pageCapture.ts` | Page → `{ url, title, text, descriptionMarkdown, applicationForm }` (runs inside the page) |
+| `formFields.ts` | The application form's free-text fields and cover letter upload, choices and contact fields dropped |
 | `pickBestCapture.ts` | Picks the frame with the most text |
 | `sectionFilter.ts` | Drops benefits/EEO/etc. sections by heading |
-| `extractFields.ts` | Claude Haiku structured output → title, full title, salary, application reqs |
-| `jobMarkdown.ts` | Builds the frontmatter, and the markdown for each body section (Application Reqs, Job Description) |
+| `extractFields.ts` | Claude Haiku structured output → title, full title, salary, cover letter, questions that take work |
+| `jobMarkdown.ts` | Builds the frontmatter (incl. easy-apply tag), and the markdown for each body section |
 | `capacities.ts` | `POST /object/markdown` (properties), `POST /blocks/append` (body sections, by property id) |
 | `saveJob.ts` | Orchestrates the above, returns `saved` / `error` |
 | `overlay.ts` | The in-page status dialog (self-contained, injected with `executeScript`) |

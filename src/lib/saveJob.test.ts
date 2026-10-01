@@ -8,6 +8,7 @@ const capture: PageCapture = {
   title: 'RevenueCat',
   text: 'Senior Software Engineer, Product. RevenueCat makes building, analyzing, and growing mobile subscriptions easy. $227K',
   descriptionMarkdown: '## The Role\n\nShip.',
+  applicationForm: { found: true, fields: [{ kind: 'long text', label: 'Why RevenueCat?', required: true }] },
 };
 
 const fields: JobFields = {
@@ -15,7 +16,8 @@ const fields: JobFields = {
   title: 'RevenueCat - FS/Product',
   fullTitle: 'Senior Software Engineer, Product',
   salaryRange: '$227K + equity',
-  applicationReqs: null,
+  coverLetter: 'none',
+  applicationQuestions: [],
 };
 
 function deps(overrides: { extract?: Mock; create?: Mock; appendSection?: Mock } = {}) {
@@ -31,7 +33,12 @@ describe('saveJob', () => {
   it('extracts fields from the capture text, url, and title', async () => {
     const d = deps();
     await saveJob(capture, d);
-    expect(d.extract).toHaveBeenCalledWith({ url: capture.url, title: capture.title, text: capture.text });
+    expect(d.extract).toHaveBeenCalledWith({
+      url: capture.url,
+      title: capture.title,
+      text: capture.text,
+      applicationForm: capture.applicationForm,
+    });
   });
 
   it('creates the object from frontmatter built with the AI fields', async () => {
@@ -85,15 +92,33 @@ describe('saveJob', () => {
       ...capture,
       descriptionMarkdown: 'Grafana Labs is the company behind Grafana Cloud.\n\n## The opportunity\n\nBuild RUM.',
     };
-    const reqs = '- Resume/CV required\n- LinkedIn Profile required\n- Custom questions:\n  - How did you hear about us?';
-
     it('puts application reqs and the description each into their own section, and nothing else', async () => {
-      const d = deps({ extract: vi.fn().mockResolvedValue({ ...fields, applicationReqs: reqs }) });
+      const d = deps({
+        extract: vi.fn().mockResolvedValue({
+          ...fields,
+          coverLetter: 'required',
+          applicationQuestions: [{ question: 'Why Grafana?', required: true }],
+        }),
+      });
       await saveJob(grafana, d);
       expect(d.appendSection.mock.calls).toEqual([
-        ['obj-9', 'applicationReqs', reqs],
+        ['obj-9', 'applicationReqs', 'Cover letter (required)\n\n- Why Grafana?'],
         ['obj-9', 'jobDescription', grafana.descriptionMarkdown],
       ]);
+      expect(d.create.mock.calls[0][0]).not.toContain('tags');
+    });
+
+    it('tags the job easy-apply when the form asks for nothing that takes work', async () => {
+      const d = deps();
+      await saveJob(grafana, d);
+      expect(d.create.mock.calls[0][0]).toContain('tags: easy-apply');
+      expect(d.appendSection.mock.calls[0]).toEqual(['obj-9', 'applicationReqs', 'No cover letter!']);
+    });
+
+    it("doesn't tag easy-apply when the form wasn't on the page", async () => {
+      const d = deps();
+      await saveJob({ ...grafana, applicationForm: { found: false, fields: [] } }, d);
+      expect(d.create.mock.calls[0][0]).not.toContain('tags');
     });
 
     it('creates the object before appending to it', async () => {
@@ -102,17 +127,11 @@ describe('saveJob', () => {
       expect(d.create.mock.invocationCallOrder[0]).toBeLessThan(d.appendSection.mock.invocationCallOrder[0]);
     });
 
-    it('skips application reqs when the page shows none', async () => {
-      const d = deps();
-      await saveJob(grafana, d);
-      expect(d.appendSection.mock.calls.map((c) => c[1])).toEqual(['jobDescription']);
-    });
-
     it('says which section failed, and that the Job itself exists', async () => {
       const d = deps({ appendSection: vi.fn().mockRejectedValue(new Error('Capacities error 400: bad')) });
       await expect(saveJob(grafana, d)).resolves.toEqual({
         status: 'error',
-        message: "Job created, but its Job Description couldn't be saved: Capacities error 400: bad",
+        message: "Job created, but its Application Reqs couldn't be saved: Capacities error 400: bad",
       });
     });
   });

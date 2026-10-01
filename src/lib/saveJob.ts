@@ -25,13 +25,18 @@ export async function saveJob(capture: PageCapture | null, deps: SaveDeps): Prom
   if (!capture || capture.text.trim().length < MIN_PAGE_CHARS) return { status: 'error', message: UNREADABLE };
 
   try {
-    const fields = await deps.extract({ url: capture.url, title: capture.title, text: capture.text });
+    const { url, title, text, applicationForm } = capture;
+    const fields = await deps.extract({ url, title, text, applicationForm });
     const doc = {
       title: fields.title,
       fullTitle: fields.fullTitle,
       url: capture.url,
       salaryRange: fields.salaryRange,
-      applicationReqs: fields.applicationReqs,
+      application: {
+        coverLetter: fields.coverLetter,
+        questions: fields.applicationQuestions,
+        formFound: applicationForm.found,
+      },
       description: capture.descriptionMarkdown,
     };
     const { id } = await deps.create(buildJobMarkdown(doc));
