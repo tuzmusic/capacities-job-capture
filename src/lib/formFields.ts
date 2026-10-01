@@ -42,28 +42,60 @@ function textWithoutControls(el: Element): string {
   return copy.textContent ?? '';
 }
 
-function rawLabel(el: HTMLElement, doc: Document): string {
-  const labelledBy = el.getAttribute('aria-labelledby');
-  if (labelledBy) {
-    const text = labelledBy
-      .split(/\s+/)
-      .map((id) => doc.getElementById(id)?.textContent ?? '')
-      .join(' ');
-    if (text.trim()) return text;
+/**
+ * Text inside `container` that comes before `el`. Lever wraps the whole question in a <label>, so the question is what
+ * precedes the input, and what follows it is widget chrome ("No location found...").
+ */
+function textBefore(container: Element, el: Element, doc: Document): string {
+  const SHOW_TEXT = 4; // NodeFilter.SHOW_TEXT
+  const walker = doc.createTreeWalker(container, SHOW_TEXT);
+  let text = '';
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (!(n.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING)) break;
+    const parent = n.parentElement;
+    if (parent?.closest('button, select, option, script, style')) continue;
+    text += ` ${n.textContent ?? ''}`;
   }
+  return text;
+}
+
+/** Labels on upload buttons that say what to do, not what the file is. */
+const GENERIC_LABEL = /^\s*(?:attach|upload|browse|choose (?:a )?file|select (?:a )?file|drop files? here|enter manually)\s*$/i;
+
+function rawLabel(el: HTMLElement, doc: Document): string {
+  const label = specificLabel(el, doc);
+  if (label.trim() && !GENERIC_LABEL.test(label)) return label;
+  // Greenhouse's uploads: <div role="group" aria-labelledby="upload-label-cover_letter"> around an "Attach" button.
+  const group = el.closest('[role="group"][aria-labelledby]');
+  const groupLabel = group && labelledByText(group, doc);
+  return groupLabel?.trim() ? groupLabel : nearbyText(el, doc);
+}
+
+function labelledByText(el: Element, doc: Document): string {
+  return (el.getAttribute('aria-labelledby') ?? '')
+    .split(/\s+/)
+    .map((id) => (id ? (doc.getElementById(id)?.textContent ?? '') : ''))
+    .join(' ');
+}
+
+function specificLabel(el: HTMLElement, doc: Document): string {
+  const labelledBy = labelledByText(el, doc);
+  if (labelledBy.trim()) return labelledBy;
   if (el.id) {
     const forLabel = Array.from(doc.querySelectorAll('label')).find((l) => l.getAttribute('for') === el.id);
     if (forLabel && textWithoutControls(forLabel).trim()) return textWithoutControls(forLabel);
   }
   const wrapping = el.closest('label');
-  if (wrapping && textWithoutControls(wrapping).trim()) return textWithoutControls(wrapping);
-  const aria = el.getAttribute('aria-label');
-  if (aria?.trim()) return aria;
-  // Lever and friends: the question text sits in a sibling div, a level or two up.
+  if (wrapping && textBefore(wrapping, el, doc).trim()) return textBefore(wrapping, el, doc);
+  return el.getAttribute('aria-label') ?? '';
+}
+
+/** No usable label: the question text usually sits just before the field, a level or a few up. */
+function nearbyText(el: HTMLElement, doc: Document): string {
   let node = el.parentElement;
-  for (let depth = 0; node && depth < 4; depth++, node = node.parentElement) {
-    const text = textWithoutControls(node).trim();
-    if (text) return text.length <= MAX_LABEL_CHARS * 2 ? text : '';
+  for (let depth = 0; node && depth < 6; depth++, node = node.parentElement) {
+    const text = textBefore(node, el, doc).trim();
+    if (text && !GENERIC_LABEL.test(text)) return text.length <= MAX_LABEL_CHARS * 2 ? text : '';
   }
   return el.getAttribute('placeholder') ?? el.getAttribute('name') ?? '';
 }
@@ -84,12 +116,20 @@ function isChoice(el: HTMLElement): boolean {
 }
 
 function classify(el: HTMLElement): FormField['kind'] | null {
+  if (el.getAttribute('aria-hidden') === 'true') return null; // validation shims behind custom widgets
   if (el instanceof HTMLTextAreaElement || el.tagName === 'TEXTAREA') return 'long text';
   if (el.tagName !== 'INPUT') return null;
   const type = (el.getAttribute('type') ?? '').toLowerCase();
   if (type === 'file') return 'file upload';
   if (TEXT_INPUT_TYPES.has(type) && !isChoice(el)) return 'short text';
   return null;
+}
+
+/** Uploads only matter if they're a cover letter; short text only if it's more than contact details. */
+export function worthListing(kind: FormField['kind'], label: string): boolean {
+  if (kind === 'file upload') return COVER_LETTER.test(label);
+  if (kind === 'short text') return !CONTACT_FIELD.test(label);
+  return true;
 }
 
 export function readApplicationForm(doc: Document): ApplicationForm {
@@ -103,8 +143,7 @@ export function readApplicationForm(doc: Document): ApplicationForm {
     const raw = rawLabel(el, doc);
     const label = clean(raw);
     if (!label) continue;
-    if (kind === 'file upload' && !COVER_LETTER.test(label)) continue;
-    if (kind === 'short text' && CONTACT_FIELD.test(label)) continue;
+    if (!worthListing(kind, label)) continue;
 
     const key = label.toLowerCase();
     if (seen.has(key)) continue;

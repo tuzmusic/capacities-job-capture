@@ -8,6 +8,7 @@ const fields: JobFields = {
   salaryRange: '$172K–$203K + equity',
   coverLetter: 'optional',
   applicationQuestions: [{ question: 'Why Postscript?', required: true }],
+  formNote: null,
 };
 
 function fakeClient(response: Partial<{ parsed_output: unknown; stop_reason: string }>) {
@@ -19,14 +20,22 @@ const page: PageForExtraction = {
   url: 'https://jobs.lever.co/acme/123',
   title: 'Acme - Staff Engineer',
   text: 'Staff Engineer at Acme...',
-  applicationForm: {
-    found: true,
-    fields: [
-      { kind: 'long text', label: 'Why Acme?', required: true },
-      { kind: 'short text', label: 'How did you hear about us?', required: false },
-    ],
+  formLookup: {
+    form: {
+      found: true,
+      fields: [
+        { kind: 'long text', label: 'Why Acme?', required: true },
+        { kind: 'short text', label: 'How did you hear about us?', required: false },
+      ],
+    },
+    missedApplyPage: null,
   },
 };
+
+const noForm = (missedApplyPage: PageForExtraction['formLookup']['missedApplyPage']) => ({
+  ...page,
+  formLookup: { form: { found: false, fields: [] }, missedApplyPage },
+});
 
 describe('extractFields', () => {
   it('returns the parsed fields', async () => {
@@ -59,10 +68,18 @@ describe('extractFields', () => {
     expect(content).toContain('<application_form>\n- [long text, required] Why Acme?\n- [short text, optional] How did you hear about us?\n</application_form>');
   });
 
-  it('says so when the page has no application form', async () => {
+  it('says so when the page has no application form and no link to one', async () => {
     const { client, parse } = fakeClient({ parsed_output: fields });
-    await extractFields(client, { ...page, applicationForm: { found: false, fields: [] } });
-    expect(String(parse.mock.calls[0][0].messages[0].content)).toContain('No application form on this page.');
+    await extractFields(client, noForm(null));
+    expect(String(parse.mock.calls[0][0].messages[0].content)).toContain('No application form on this page, and no link to one.');
+  });
+
+  it('shows the model what the apply page looked like when it had no form, so it can say why', async () => {
+    const { client, parse } = fakeClient({ parsed_output: fields });
+    await extractFields(client, noForm({ url: 'https://acme.com/apply', text: 'Sign in to continue' }));
+    const content = String(parse.mock.calls[0][0].messages[0].content);
+    expect(content).toContain('The apply link (https://acme.com/apply) had no form either. It showed:\nSign in to continue');
+    expect(String(parse.mock.calls[0][0].system)).toContain('needs login');
   });
 
   it('tells the model the short-title convention with real examples', async () => {

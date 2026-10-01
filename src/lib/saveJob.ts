@@ -1,11 +1,14 @@
 import type { JobFields, PageForExtraction } from './extractFields.ts';
 import type { JobSection } from './capacities.ts';
+import type { FormLookup } from './findApplicationForm.ts';
 import { buildJobMarkdown, buildJobSections } from './jobMarkdown.ts';
 import type { PageCapture } from './pageCapture.ts';
 
 export type SaveResult = { status: 'saved'; title: string; objectId: string } | { status: 'error'; message: string };
 
 export interface SaveDeps {
+  /** Only called when the form isn't on the captured page. */
+  findForm: (capture: PageCapture) => Promise<FormLookup>;
   extract: (page: PageForExtraction) => Promise<JobFields>;
   create: (markdown: string) => Promise<{ id: string }>;
   appendSection: (objectId: string, section: JobSection, markdown: string) => Promise<void>;
@@ -26,7 +29,10 @@ export async function saveJob(capture: PageCapture | null, deps: SaveDeps): Prom
 
   try {
     const { url, title, text, applicationForm } = capture;
-    const fields = await deps.extract({ url, title, text, applicationForm });
+    const formLookup: FormLookup = applicationForm.found
+      ? { form: applicationForm, missedApplyPage: null }
+      : await deps.findForm(capture).catch(() => ({ form: applicationForm, missedApplyPage: null }));
+    const fields = await deps.extract({ url, title, text, formLookup });
     const doc = {
       title: fields.title,
       fullTitle: fields.fullTitle,
@@ -35,7 +41,8 @@ export async function saveJob(capture: PageCapture | null, deps: SaveDeps): Prom
       application: {
         coverLetter: fields.coverLetter,
         questions: fields.applicationQuestions,
-        formFound: applicationForm.found,
+        formFound: formLookup.form.found,
+        formNote: fields.formNote,
       },
       description: capture.descriptionMarkdown,
     };

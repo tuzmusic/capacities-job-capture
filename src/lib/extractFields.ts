@@ -1,7 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { z } from 'zod';
-import type { ApplicationForm } from './formFields.ts';
+import type { FormLookup } from './findApplicationForm.ts';
 
 /** Small, fast, cheap: this is reading one page and filling a handful of fields. */
 export const EXTRACTION_MODEL = 'claude-haiku-4-5';
@@ -22,6 +22,10 @@ export const JobFieldsSchema = z.object({
       }),
     )
     .describe('Only questions that take real work to answer. Empty if there are none.'),
+  formNote: z
+    .string()
+    .nullable()
+    .describe('Only when no application form was found: 1-3 words on why, e.g. "Workday" or "needs login". Else null.'),
 });
 
 export type JobFields = z.infer<typeof JobFieldsSchema>;
@@ -33,11 +37,15 @@ export interface PageForExtraction {
   url: string;
   title: string;
   text: string;
-  applicationForm: ApplicationForm;
+  formLookup: FormLookup;
 }
 
-function describeForm(form: ApplicationForm): string {
-  if (!form.found) return 'No application form on this page.';
+function describeForm({ form, missedApplyPage: missed }: FormLookup): string {
+  if (!form.found) {
+    if (!missed) return 'No application form on this page, and no link to one.';
+    const seen = missed.text ? `It showed:\n${missed.text}` : 'It was not opened.';
+    return `No application form on this page. The apply link (${missed.url}) had no form either. ${seen}`;
+  }
   if (form.fields.length === 0) return 'The application form has no free-text fields.';
   return form.fields
     .map((f) => `- [${f.kind}, ${f.required ? 'required' : 'optional'}] ${f.label}`)
@@ -68,6 +76,9 @@ Fields:
       referrer name, salary expectations, start date, notice period, years of experience, visa status, and the like.
   - If there is no application form on the page, use questions the page text says the application will ask, if any.
     Never list questions from job requirements ("5+ years of React") or from other postings.
+- formNote: only when no application form was found. If the URLs or the apply page make the reason obvious, say it in
+  1-3 words: "Workday", "needs login", "multi-step", "external site", "email to apply". null if it isn't obvious, and
+  null whenever a form was found.
 
 The page text may include navigation, other job listings, or cookie banners. Ignore them. Never invent values.`;
 
@@ -82,7 +93,7 @@ export async function extractFields(client: ParseClient, page: PageForExtraction
         content:
           `URL: ${page.url}\nDocument title: ${page.title}\n\n` +
           `<page_text>\n${page.text}\n</page_text>\n\n` +
-          `<application_form>\n${describeForm(page.applicationForm)}\n</application_form>`,
+          `<application_form>\n${describeForm(page.formLookup)}\n</application_form>`,
       },
     ],
     output_config: { format: zodOutputFormat(JobFieldsSchema) },

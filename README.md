@@ -7,8 +7,12 @@ Chrome extension (MV3): one click saves the job posting in the current tab as a 
 - **Application Reqs** always starts with *Cover letter (required)*, *Optional cover letter*, or *No cover letter!*,
   then lists only the questions that take work. Choice fields (selects, comboboxes, checkboxes, radios) and contact
   fields are dropped in code (`src/lib/formFields.ts`); Haiku judges the free-text fields that remain.
+- **Separate apply pages:** if the form isn't on the page you captured, it looks for it. Greenhouse jobs go through
+  Greenhouse's public job board API. Lever (`/apply`), Ashby (`/application`), and any page's own "Apply" link are
+  opened in a background tab, captured, and closed. Workday, iCIMS, Taleo and the like aren't opened (login walls,
+  multi-step forms). When the form still can't be read, Haiku adds a short reason, like "(Workday)" or "(needs login)".
 - **easy-apply** tag is added when there's no required cover letter and no questions at all (an optional cover letter
-  doesn't count, optional questions do). Only when the application form is on the captured page; otherwise Application Reqs says to check.
+  doesn't count, optional questions do). Only when the application form was found; otherwise Application Reqs says to check.
 - **Job Description** is copied verbatim (Readability → markdown). Sections like Benefits, Perks, "Why join us", and EEO
   are dropped by heading, with no AI involved. The patterns are in `src/lib/sectionFilter.ts` (`DROP_HEADINGS`).
 - **Status** defaults to *Info Gathering*. Everything else is left for you.
@@ -46,6 +50,9 @@ Everything testable lives in `src/lib/` and takes its dependencies (API clients,
 | Module | Does |
 |---|---|
 | `pageCapture.ts` | Page → `{ url, title, text, descriptionMarkdown, applicationForm }` (runs inside the page) |
+| `applyLink.ts` | Where the apply page is, when the form isn't on this one (runs inside the page) |
+| `findApplicationForm.ts` | Gets the form from the Greenhouse API or a background tab |
+| `greenhouse.ts` | Greenhouse job board API → the same form fields the page reader produces |
 | `formFields.ts` | The application form's free-text fields and cover letter upload, choices and contact fields dropped |
 | `pickBestCapture.ts` | Picks the frame with the most text |
 | `sectionFilter.ts` | Drops benefits/EEO/etc. sections by heading |

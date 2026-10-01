@@ -19,8 +19,10 @@ export interface JobDocInput {
 export interface ApplicationReqs {
   coverLetter: JobFields['coverLetter'];
   questions: JobFields['applicationQuestions'];
-  /** Whether the application form was on the captured page. If not, we can't vouch that the job is easy to apply to. */
+  /** Whether we found the application form (on the page or its apply page). If not, we can't vouch for easy-apply. */
   formFound: boolean;
+  /** Why the form couldn't be read, in a word or three ("Workday", "needs login"), if evident. */
+  formNote?: string | null;
 }
 
 export const DEFAULT_STATUS = 'Info Gathering';
@@ -34,7 +36,8 @@ const COVER_LETTER_LINE: Record<ApplicationReqs['coverLetter'], string> = {
   none: 'No cover letter!',
 };
 
-const FORM_NOT_FOUND_NOTE = "_The application form wasn't on this page, so there may be more. Check before applying._";
+const formNotFoundNote = (why?: string | null) =>
+  `_Couldn't read the application form${why?.trim() ? ` (${why.trim()})` : ''}, so there may be more. Check before applying._`;
 
 /** Nothing beyond the basics: no required cover letter, and no questions at all (optional ones count too). */
 export function isEasyApply(app: ApplicationReqs): boolean {
@@ -47,7 +50,7 @@ export function formatApplicationReqs(app: ApplicationReqs): string {
   if (app.questions.length) {
     lines.push('', ...app.questions.map((q) => `- ${q.question.trim()}${q.required ? '' : ' _(optional)_'}`));
   }
-  if (!app.formFound) lines.push('', FORM_NOT_FOUND_NOTE);
+  if (!app.formFound) lines.push('', formNotFoundNote(app.formNote));
   return lines.join('\n');
 }
 

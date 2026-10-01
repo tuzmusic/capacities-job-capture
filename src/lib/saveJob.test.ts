@@ -9,6 +9,7 @@ const capture: PageCapture = {
   text: 'Senior Software Engineer, Product. RevenueCat makes building, analyzing, and growing mobile subscriptions easy. $227K',
   descriptionMarkdown: '## The Role\n\nShip.',
   applicationForm: { found: true, fields: [{ kind: 'long text', label: 'Why RevenueCat?', required: true }] },
+  applyUrl: null,
 };
 
 const fields: JobFields = {
@@ -18,10 +19,14 @@ const fields: JobFields = {
   salaryRange: '$227K + equity',
   coverLetter: 'none',
   applicationQuestions: [],
+  formNote: null,
 };
 
-function deps(overrides: { extract?: Mock; create?: Mock; appendSection?: Mock } = {}) {
+const noForm = { found: false, fields: [] };
+
+function deps(overrides: { findForm?: Mock; extract?: Mock; create?: Mock; appendSection?: Mock } = {}) {
   return {
+    findForm: vi.fn().mockResolvedValue({ form: noForm, missedApplyPage: null }),
     extract: vi.fn().mockResolvedValue(fields),
     create: vi.fn().mockResolvedValue({ id: 'obj-9' }),
     appendSection: vi.fn().mockResolvedValue(undefined),
@@ -37,7 +42,7 @@ describe('saveJob', () => {
       url: capture.url,
       title: capture.title,
       text: capture.text,
-      applicationForm: capture.applicationForm,
+      formLookup: { form: capture.applicationForm, missedApplyPage: null },
     });
   });
 
@@ -115,9 +120,33 @@ describe('saveJob', () => {
       expect(d.appendSection.mock.calls[0]).toEqual(['obj-9', 'applicationReqs', 'No cover letter!']);
     });
 
-    it("doesn't tag easy-apply when the form wasn't on the page", async () => {
+    it("doesn't tag easy-apply when the form couldn't be found, and says why if the AI could tell", async () => {
+      const d = deps({ extract: vi.fn().mockResolvedValue({ ...fields, formNote: 'Workday' }) });
+      await saveJob({ ...grafana, applicationForm: noForm }, d);
+      expect(d.create.mock.calls[0][0]).not.toContain('tags');
+      expect(d.appendSection.mock.calls[0][2]).toContain("_Couldn't read the application form (Workday)");
+    });
+
+    it("doesn't look elsewhere when the form is on the page", async () => {
       const d = deps();
-      await saveJob({ ...grafana, applicationForm: { found: false, fields: [] } }, d);
+      await saveJob(grafana, d);
+      expect(d.findForm).not.toHaveBeenCalled();
+    });
+
+    it('uses a form found on the apply page, and tells the AI about it', async () => {
+      const found = { form: { found: true, fields: [] }, missedApplyPage: null };
+      const d = deps({ findForm: vi.fn().mockResolvedValue(found) });
+      const page = { ...grafana, applicationForm: noForm, applyUrl: 'https://jobs.lever.co/x/y/apply' };
+      await saveJob(page, d);
+      expect(d.findForm).toHaveBeenCalledWith(page);
+      expect(d.extract.mock.calls[0][0].formLookup).toEqual(found);
+      expect(d.create.mock.calls[0][0]).toContain('tags: easy-apply');
+    });
+
+    it('carries on without the form if looking for it fails', async () => {
+      const d = deps({ findForm: vi.fn().mockRejectedValue(new Error('tab closed')) });
+      const result = await saveJob({ ...grafana, applicationForm: noForm }, d);
+      expect(result.status).toBe('saved');
       expect(d.create.mock.calls[0][0]).not.toContain('tags');
     });
 

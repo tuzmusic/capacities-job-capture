@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import captureScript from '../content/capture.ts?script&iife';
 import { appendBlocks, createObjectFromMarkdown, JOB_SECTION_PROPERTY_IDS } from '../lib/capacities.ts';
 import { extractFields } from '../lib/extractFields.ts';
+import { findApplicationForm } from '../lib/findApplicationForm.ts';
 import { showOverlay, type OverlayState } from '../lib/overlay.ts';
 import type { PageCapture } from '../lib/pageCapture.ts';
 import { pickBestCapture } from '../lib/pickBestCapture.ts';
@@ -37,6 +38,46 @@ async function captureTab(tabId: number): Promise<PageCapture | null> {
   return run(true).catch(() => run(false));
 }
 
+/** Resolves once the tab has finished loading, or after `timeoutMs`, whichever comes first. */
+function waitForLoad(tabId: number, timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      resolve();
+    };
+    const onUpdated = (id: number, info: chrome.tabs.OnUpdatedInfo) => {
+      if (id === tabId && info.status === 'complete') done();
+    };
+    const timer = setTimeout(done, timeoutMs);
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.tabs.get(tabId).then((t) => t.status === 'complete' && done(), done);
+  });
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Client-rendered apply pages (Ashby, etc.) draw the form a moment after load; keep looking this long. */
+const FORM_RENDER_WAIT_MS = 6000;
+
+/** Opens `url` in a background tab next to the job, captures it once the form shows up (or we give up), and closes it. */
+async function captureInBackgroundTab(url: string, nextTo: chrome.tabs.Tab): Promise<PageCapture | null> {
+  const tab = await chrome.tabs.create({ url, active: false, windowId: nextTo.windowId, index: nextTo.index + 1 });
+  const tabId = tab.id!;
+  try {
+    await waitForLoad(tabId, 15000);
+    const deadline = Date.now() + FORM_RENDER_WAIT_MS;
+    let capture: PageCapture | null = null;
+    while (true) {
+      capture = await captureTab(tabId).catch(() => null);
+      if (capture?.applicationForm.found || Date.now() > deadline) return capture;
+      await sleep(500);
+    }
+  } finally {
+    await chrome.tabs.remove(tabId).catch(() => {});
+  }
+}
+
 async function saveCurrentTab(tab: chrome.tabs.Tab) {
   const tabId = tab.id;
   if (tabId === undefined) return;
@@ -54,6 +95,7 @@ async function saveCurrentTab(tab: chrome.tabs.Tab) {
     const withTabUrl = capture && tab.url ? { ...capture, url: tab.url } : capture;
     const anthropic = new Anthropic({ apiKey: anthropicApiKey, dangerouslyAllowBrowser: true });
     result = await saveJob(withTabUrl, {
+      findForm: (c) => findApplicationForm(c, { fetch, capturePage: (url) => captureInBackgroundTab(url, tab) }),
       extract: (page) => extractFields(anthropic, page),
       create: (markdown) => createObjectFromMarkdown({ fetch, token: capacitiesApiToken, markdown }),
       appendSection: (id, section, markdown) =>

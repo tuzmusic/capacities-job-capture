@@ -104,8 +104,16 @@ describe('formatApplicationReqs', () => {
     expect(md).toBe('No cover letter!\n\n- Why us?\n- Link a project you are proud of _(optional)_');
   });
 
-  it('warns when the application form was not on the page', () => {
-    expect(formatApplicationReqs(reqs({ formFound: false }))).toMatch(/^No cover letter!\n\n_The application form wasn't on this page/);
+  it('warns when the application form could not be read', () => {
+    expect(formatApplicationReqs(reqs({ formFound: false }))).toBe(
+      "No cover letter!\n\n_Couldn't read the application form, so there may be more. Check before applying._",
+    );
+  });
+
+  it('says why the form could not be read, when known', () => {
+    expect(formatApplicationReqs(reqs({ formFound: false, formNote: 'needs login' }))).toContain(
+      "_Couldn't read the application form (needs login), so",
+    );
   });
 });
 

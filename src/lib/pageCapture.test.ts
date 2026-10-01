@@ -66,6 +66,7 @@ describe('pickBestCapture', () => {
     text: 'x'.repeat(textLength),
     descriptionMarkdown: '',
     applicationForm: { found: false, fields: [] },
+    applyUrl: null,
   });
 
   it('picks the frame with the most text (e.g. an embedded ATS iframe over a thin careers shell)', () => {
@@ -84,6 +85,12 @@ describe('pickBestCapture', () => {
     const form = { found: true, fields: [{ kind: 'long text' as const, label: 'Why us?', required: true }] };
     const formFrame = { ...cap('https://boards.greenhouse.io/embed/job_app', 300), applicationForm: form };
     expect(pickBestCapture([posting, formFrame])).toEqual({ ...posting, applicationForm: form });
+  });
+
+  it('borrows an apply link from another frame when the posting frame has neither form nor link', () => {
+    const posting = cap('https://acme.com/careers/1', 9000);
+    const other = { ...cap('https://acme.com/widget', 300), applyUrl: 'https://acme.com/apply/1' };
+    expect(pickBestCapture([posting, other])?.applyUrl).toBe('https://acme.com/apply/1');
   });
 
   it('returns null when nothing was captured', () => {

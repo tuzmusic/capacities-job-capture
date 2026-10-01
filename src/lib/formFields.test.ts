@@ -78,6 +78,30 @@ describe('readApplicationForm', () => {
     expect(fields.map((f) => f.label)).toEqual(['Describe your design process', 'What are you looking for next?']);
   });
 
+  it("takes only the text before the field in Lever's wrapping labels, not the widget chrome after it", () => {
+    const { fields } = read(`
+      ${resume}
+      <label><div class="application-label">Where are you based? <span>✱</span></div>
+        <div class="application-field"><input type="text" required>
+          <div class="dropdown-no-results">No location found. Try entering a different location</div></div></label>`);
+    expect(fields).toEqual([{ kind: 'short text', label: 'Where are you based?', required: true }]);
+  });
+
+  it("finds Greenhouse's cover letter upload behind its generic \"Attach\" label", () => {
+    const { fields } = read(`
+      <div role="group" aria-labelledby="upload-label-cover_letter">
+        <div id="upload-label-cover_letter">Cover Letter</div>
+        <button type="button">Attach</button><label class="visually-hidden" for="cover_letter">Attach</label>
+        <input id="cover_letter" type="file">
+      </div>`);
+    expect(fields).toEqual([{ kind: 'file upload', label: 'Cover Letter', required: false }]);
+  });
+
+  it('skips hidden validation inputs behind custom dropdowns', () => {
+    const { fields } = read(`${resume}<div><div>Select...</div><input required tabindex="-1" aria-hidden="true"></div>`);
+    expect(fields).toEqual([]);
+  });
+
   it('lists a repeated field once', () => {
     const { fields } = read(`${resume}<textarea aria-label="Why us?"></textarea><textarea aria-label="Why us?"></textarea>`);
     expect(fields).toHaveLength(1);
