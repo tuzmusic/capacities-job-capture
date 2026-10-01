@@ -35,14 +35,24 @@ function mainContentHtml(doc: Document): string {
 
 const tidy = (s: string) => s.replace(/\n{3,}/g, '\n\n').trim();
 
-export function capturePage(doc: Document, url: string): PageCapture {
+/**
+ * Visible text only. A frame with no viewport (e.g. an invisible reCAPTCHA in a display:none container) isn't rendered,
+ * and then innerText returns the raw text content, inline scripts included: enough to outweigh the real posting.
+ */
+function visibleText(doc: Document): string {
+  const win = doc.defaultView;
+  if (win && (win.innerWidth === 0 || win.innerHeight === 0)) return '';
   const body = doc.body;
+  return body?.innerText ?? body?.textContent ?? '';
+}
+
+export function capturePage(doc: Document, url: string): PageCapture {
   const applicationForm = readApplicationForm(doc);
   const applyUrl = applicationForm.found ? null : findApplyUrl(doc, url);
   return {
     url,
     title: doc.title,
-    text: tidy(body?.innerText || body?.textContent || ''),
+    text: tidy(visibleText(doc)),
     descriptionMarkdown: filterSections(tidy(turndown.turndown(mainContentHtml(doc)))),
     applicationForm,
     applyUrl,

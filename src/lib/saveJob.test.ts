@@ -68,6 +68,12 @@ describe('saveJob', () => {
     });
   });
 
+  it('falls back to the page title when the AI title has no words in it', async () => {
+    const d = deps({ extract: vi.fn().mockResolvedValue({ ...fields, title: ' - ' }) });
+    await expect(saveJob(capture, d)).resolves.toMatchObject({ status: 'saved', title: 'RevenueCat' });
+    expect(d.create.mock.calls[0][0]).toContain('title: "RevenueCat"');
+  });
+
   it('reports an error when nothing could be read from the tab', async () => {
     const d = deps();
     await expect(saveJob(null, d)).resolves.toEqual({

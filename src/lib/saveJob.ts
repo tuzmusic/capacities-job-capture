@@ -25,6 +25,9 @@ const SECTION_LABELS: Record<JobSection, string> = {
   jobDescription: 'Job Description',
 };
 
+/** A title with no letters ("-" from an empty company and role) isn't one. */
+const usableTitle = (t: string) => (/\p{L}/u.test(t) ? t.trim() : null);
+
 const UNREADABLE = "Couldn't read this page. Wait for it to finish loading and try again.";
 
 export async function saveJob(capture: PageCapture | null, deps: SaveDeps): Promise<SaveResult> {
@@ -37,7 +40,7 @@ export async function saveJob(capture: PageCapture | null, deps: SaveDeps): Prom
       : await deps.findForm(capture).catch(() => ({ form: applicationForm, missedApplyPage: null }));
     const fields = await deps.extract({ url, title, text, formLookup });
     const doc = {
-      title: fields.title,
+      title: usableTitle(fields.title) ?? usableTitle(title) ?? fields.title,
       fullTitle: fields.fullTitle,
       url: capture.url,
       salaryRange: fields.salaryRange,
@@ -66,7 +69,7 @@ export async function saveJob(capture: PageCapture | null, deps: SaveDeps): Prom
         return { status: 'error', message: `Job created, but its ${SECTION_LABELS[section]} couldn't be saved: ${reason}` };
       }
     }
-    return { status: 'saved', title: fields.title, objectId: id };
+    return { status: 'saved', title: doc.title, objectId: id };
   } catch (err) {
     return { status: 'error', message: err instanceof Error ? err.message : String(err) };
   }

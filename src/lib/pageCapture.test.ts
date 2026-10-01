@@ -47,6 +47,18 @@ describe('capturePage', () => {
     expect(descriptionMarkdown).not.toContain('Powered by Greenhouse');
   });
 
+  it('reports no text for a frame with no viewport, instead of its script source', () => {
+    document.documentElement.innerHTML = `<body>protected by reCAPTCHA<script>${'var x = 1;'.repeat(1000)}</script></body>`;
+    const width = Object.getOwnPropertyDescriptor(window, 'innerWidth');
+    Object.defineProperty(window, 'innerWidth', { value: 0, configurable: true });
+    try {
+      expect(capturePage(document, 'https://www.google.com/recaptcha/api2/anchor').text).toBe('');
+    } finally {
+      if (width) Object.defineProperty(window, 'innerWidth', width);
+      else delete (window as { innerWidth?: number }).innerWidth;
+    }
+  });
+
   it('does not mutate the live page', () => {
     load(fixture);
     expect(document.querySelector('nav')).not.toBeNull();
