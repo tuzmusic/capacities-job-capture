@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { appendBlocks, createObjectFromMarkdown, JOB_SECTION_PROPERTY_IDS, JOB_STRUCTURE_ID } from './capacities.ts';
+import {
+  appendBlocks,
+  createObjectFromMarkdown,
+  EMPTY_PARAGRAPH,
+  JOB_SECTION_PROPERTY_IDS,
+  JOB_STRUCTURE_ID,
+} from './capacities.ts';
 
 function fakeFetch(status: number, body: unknown) {
   return vi.fn().mockResolvedValue(
@@ -70,8 +76,25 @@ describe('appendBlocks', () => {
     });
   });
 
-  it('uses distinct property ids for the two sections', () => {
-    expect(JOB_SECTION_PROPERTY_IDS.applicationReqs).not.toBe(JOB_SECTION_PROPERTY_IDS.jobDescription);
+  it('uses distinct property ids for each section', () => {
+    const ids = Object.values(JOB_SECTION_PROPERTY_IDS);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('can send raw blocks instead of markdown', async () => {
+    const fetch = fakeFetch(200, {});
+    await appendBlocks({ fetch, token: 't', id: 'obj-1', propertyId: 'p', blocks: [EMPTY_PARAGRAPH] });
+    const body = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(body).toEqual({ id: 'obj-1', propertyId: 'p', blocks: [EMPTY_PARAGRAPH] });
+    expect(body).not.toHaveProperty('markdown');
+  });
+
+  it('sends an empty paragraph shaped like the ones the Job template puts in blank sections', () => {
+    expect(EMPTY_PARAGRAPH).toEqual({
+      type: 'TextBlock',
+      tokens: [{ type: 'TextToken', text: '', style: {} }],
+      hierarchy: { key: 'Base', val: 0 },
+    });
   });
 
   it('reports failures the same way as create', async () => {

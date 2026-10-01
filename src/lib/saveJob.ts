@@ -12,12 +12,15 @@ export interface SaveDeps {
   extract: (page: PageForExtraction) => Promise<JobFields>;
   create: (markdown: string) => Promise<{ id: string }>;
   appendSection: (objectId: string, section: JobSection, markdown: string) => Promise<void>;
+  /** Gives a section an empty line, so it can be typed in. */
+  appendEmptyLine: (objectId: string, section: JobSection) => Promise<void>;
 }
 
 /** Less than this and the tab is probably still loading, a login wall, or not a posting. */
 const MIN_PAGE_CHARS = 100;
 
 const SECTION_LABELS: Record<JobSection, string> = {
+  contacts: '1st & 2nd Degree Contacts',
   applicationReqs: 'Application Reqs',
   jobDescription: 'Job Description',
 };
@@ -48,9 +51,16 @@ export async function saveJob(capture: PageCapture | null, deps: SaveDeps): Prom
     };
     const { id } = await deps.create(buildJobMarkdown(doc));
 
-    for (const [section, markdown] of Object.entries(buildJobSections(doc)) as [JobSection, string][]) {
+    // Our body is empty, so the first section (which gets the body) is created with no blocks, and can't be edited.
+    const writes: [JobSection, () => Promise<void>][] = [
+      ['contacts', () => deps.appendEmptyLine(id, 'contacts')],
+      ...(Object.entries(buildJobSections(doc)) as [JobSection, string][]).map(
+        ([section, markdown]): [JobSection, () => Promise<void>] => [section, () => deps.appendSection(id, section, markdown)],
+      ),
+    ];
+    for (const [section, write] of writes) {
       try {
-        await deps.appendSection(id, section, markdown);
+        await write();
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
         return { status: 'error', message: `Job created, but its ${SECTION_LABELS[section]} couldn't be saved: ${reason}` };

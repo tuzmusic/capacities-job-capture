@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import captureScript from '../content/capture.ts?script&iife';
-import { appendBlocks, createObjectFromMarkdown, JOB_SECTION_PROPERTY_IDS } from '../lib/capacities.ts';
+import { appendBlocks, createObjectFromMarkdown, EMPTY_PARAGRAPH, JOB_SECTION_PROPERTY_IDS } from '../lib/capacities.ts';
 import { extractFields } from '../lib/extractFields.ts';
 import { findApplicationForm } from '../lib/findApplicationForm.ts';
 import { showOverlay, type OverlayState } from '../lib/overlay.ts';
@@ -125,6 +125,14 @@ async function saveCurrentTab(tab: chrome.tabs.Tab) {
       create: (markdown) => createObjectFromMarkdown({ fetch, token: capacitiesApiToken, markdown }),
       appendSection: (id, section, markdown) =>
         appendBlocks({ fetch, token: capacitiesApiToken, id, propertyId: JOB_SECTION_PROPERTY_IDS[section], markdown }),
+      appendEmptyLine: (id, section) =>
+        appendBlocks({
+          fetch,
+          token: capacitiesApiToken,
+          id,
+          propertyId: JOB_SECTION_PROPERTY_IDS[section],
+          blocks: [EMPTY_PARAGRAPH],
+        }),
     });
   } catch (err) {
     result = { status: 'error', message: err instanceof Error ? err.message : String(err) };
