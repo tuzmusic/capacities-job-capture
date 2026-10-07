@@ -1,10 +1,12 @@
 import type { JobFields, PageForExtraction } from './extractFields.ts';
-import type { JobSection } from './capacities.ts';
+import type { JobSection } from '../../shared/capacities.ts';
 import type { FormLookup } from './findApplicationForm.ts';
 import { buildJobMarkdown, buildJobSections } from './jobMarkdown.ts';
 import type { PageCapture } from './pageCapture.ts';
 
-export type SaveResult = { status: 'saved'; title: string; objectId: string } | { status: 'error'; message: string };
+export type SaveResult =
+  | { status: 'saved'; title: string; company: string; objectId: string }
+  | { status: 'error'; message: string };
 
 export interface SaveDeps {
   /** Only called when the form isn't on the captured page. */
@@ -69,7 +71,7 @@ export async function saveJob(capture: PageCapture | null, deps: SaveDeps): Prom
         return { status: 'error', message: `Job created, but its ${SECTION_LABELS[section]} couldn't be saved: ${reason}` };
       }
     }
-    return { status: 'saved', title: doc.title, objectId: id };
+    return { status: 'saved', title: doc.title, company: fields.company, objectId: id };
   } catch (err) {
     return { status: 'error', message: err instanceof Error ? err.message : String(err) };
   }

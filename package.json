@@ -1,6 +1,6 @@
 {
   "name": "capacities-job-capture",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "One click: save the job posting in the current tab as a Capacities Job object",
   "type": "module",
   "private": true,

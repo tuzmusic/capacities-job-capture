@@ -1,4 +1,4 @@
-import { SETTINGS_KEYS } from '../lib/settings.ts';
+import { SETTINGS_KEYS } from '../../shared/settings.ts';
 
 const input = (key: string) => document.getElementById(key) as HTMLInputElement;
 const status = document.getElementById('status')!;

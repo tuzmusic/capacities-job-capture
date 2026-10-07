@@ -60,10 +60,11 @@ describe('saveJob', () => {
     expect(markdown).not.toContain('###');
   });
 
-  it('reports success with the title and object id', async () => {
+  it('reports success with the title, company, and object id', async () => {
     await expect(saveJob(capture, deps())).resolves.toEqual({
       status: 'saved',
       title: 'RevenueCat - FS/Product',
+      company: 'RevenueCat',
       objectId: 'obj-9',
     });
   });

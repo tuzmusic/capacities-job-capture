@@ -1,4 +1,4 @@
-import type { JobSection } from './capacities.ts';
+import type { JobSection } from '../../shared/capacities.ts';
 import type { JobFields } from './extractFields.ts';
 
 /**

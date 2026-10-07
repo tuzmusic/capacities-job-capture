@@ -26,4 +26,11 @@ describe('loadSettings', () => {
       message: 'Set your Anthropic API key and Capacities API token in the extension options.',
     });
   });
+
+  it('only requires the keys asked for', async () => {
+    await expect(loadSettings(storage({ capacitiesApiToken: 'cap-api-y' }), ['capacitiesApiToken'])).resolves.toEqual({
+      ok: true,
+      settings: { anthropicApiKey: '', capacitiesApiToken: 'cap-api-y' },
+    });
+  });
 });

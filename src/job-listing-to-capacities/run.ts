@@ -1,25 +1,26 @@
 import Anthropic from '@anthropic-ai/sdk';
-import captureScript from '../content/capture.ts?script&iife';
-import { appendBlocks, createObjectFromMarkdown, EMPTY_PARAGRAPH, JOB_SECTION_PROPERTY_IDS } from '../lib/capacities.ts';
-import { extractFields } from '../lib/extractFields.ts';
-import { findApplicationForm } from '../lib/findApplicationForm.ts';
-import { showOverlay, type OverlayState } from '../lib/overlay.ts';
-import type { PageCapture } from '../lib/pageCapture.ts';
-import { pickBestCapture } from '../lib/pickBestCapture.ts';
-import { saveJob, type SaveResult } from '../lib/saveJob.ts';
-import { loadSettings } from '../lib/settings.ts';
+import {
+  appendBlocks,
+  appendToSection,
+  createObjectFromMarkdown,
+  EMPTY_PARAGRAPH,
+  JOB_SECTION_PROPERTY_IDS,
+} from '../shared/capacities.ts';
+import type { OverlayState } from '../shared/overlay.ts';
+import { recordSavedJob } from '../shared/savedJobs.ts';
+import { loadSettings } from '../shared/settings.ts';
+import { show, sleep, waitForLoad } from '../shared/tabs.ts';
+import captureScript from './content/capture.ts?script&iife';
+import { extractFields } from './lib/extractFields.ts';
+import { findApplicationForm } from './lib/findApplicationForm.ts';
+import type { PageCapture } from './lib/pageCapture.ts';
+import { pickBestCapture } from './lib/pickBestCapture.ts';
+import { saveJob, type SaveResult } from './lib/saveJob.ts';
 
-const BADGE: Record<OverlayState['status'], { text: string; color: string }> = {
-  saving: { text: '…', color: '#8e8e93' },
-  saved: { text: '✓', color: '#2e9d5b' },
-  error: { text: '✗', color: '#d93a3a' },
-};
-
-async function show(tabId: number, state: OverlayState) {
-  const badge = BADGE[state.status];
-  await chrome.action.setBadgeText({ tabId, text: badge.text });
-  await chrome.action.setBadgeBackgroundColor({ tabId, color: badge.color });
-  await chrome.scripting.executeScript({ target: { tabId }, func: showOverlay, args: [state] }).catch(() => {});
+function resultOverlay(result: SaveResult): OverlayState {
+  return result.status === 'saved'
+    ? { tone: 'success', heading: 'Saved to Capacities', detail: result.title }
+    : { tone: 'error', heading: 'Not saved', detail: result.message };
 }
 
 /** Captures every frame and keeps the richest one, so embedded ATS iframes (?gh_jid=...) are covered. */
@@ -37,25 +38,6 @@ async function captureTab(tabId: number): Promise<PageCapture | null> {
   // One uninjectable frame (sandboxed ad iframe, etc.) can fail the all-frames call; fall back to the top frame.
   return run(true).catch(() => run(false));
 }
-
-/** Resolves once the tab has finished loading, or after `timeoutMs`, whichever comes first. */
-function waitForLoad(tabId: number, timeoutMs: number): Promise<void> {
-  return new Promise((resolve) => {
-    const done = () => {
-      clearTimeout(timer);
-      chrome.tabs.onUpdated.removeListener(onUpdated);
-      resolve();
-    };
-    const onUpdated = (id: number, info: chrome.tabs.OnUpdatedInfo) => {
-      if (id === tabId && info.status === 'complete') done();
-    };
-    const timer = setTimeout(done, timeoutMs);
-    chrome.tabs.onUpdated.addListener(onUpdated);
-    chrome.tabs.get(tabId).then((t) => t.status === 'complete' && done(), done);
-  });
-}
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Client-rendered apply pages (Ashby, etc.) draw the form a moment after load; keep looking this long. */
 const FORM_RENDER_WAIT_MS = 6000;
@@ -103,15 +85,16 @@ async function captureInBackgroundTab(
   }
 }
 
-async function saveCurrentTab(tab: chrome.tabs.Tab) {
+/** Menu item: saves the job posting in `tab` as a Capacities Job. */
+export async function saveJobListing(tab: chrome.tabs.Tab) {
   const tabId = tab.id;
   if (tabId === undefined) return;
 
   const loaded = await loadSettings(chrome.storage.local);
-  if (!loaded.ok) return show(tabId, { status: 'error', message: loaded.message });
+  if (!loaded.ok) return show(tabId, { tone: 'error', heading: 'Not saved', detail: loaded.message });
   const { anthropicApiKey, capacitiesApiToken } = loaded.settings;
 
-  await show(tabId, { status: 'saving' });
+  await show(tabId, { tone: 'busy', heading: 'Saving job to Capacities…' });
 
   let result: SaveResult;
   try {
@@ -124,7 +107,7 @@ async function saveCurrentTab(tab: chrome.tabs.Tab) {
       extract: (page) => extractFields(anthropic, page),
       create: (markdown) => createObjectFromMarkdown({ fetch, token: capacitiesApiToken, markdown }),
       appendSection: (id, section, markdown) =>
-        appendBlocks({ fetch, token: capacitiesApiToken, id, propertyId: JOB_SECTION_PROPERTY_IDS[section], markdown }),
+        appendToSection({ fetch, token: capacitiesApiToken, id, propertyId: JOB_SECTION_PROPERTY_IDS[section], markdown }),
       appendEmptyLine: (id, section) =>
         appendBlocks({
           fetch,
@@ -138,7 +121,11 @@ async function saveCurrentTab(tab: chrome.tabs.Tab) {
     result = { status: 'error', message: err instanceof Error ? err.message : String(err) };
   }
 
-  await show(tabId, result);
+  if (result.status === 'saved') {
+    const { objectId, title, company } = result;
+    await recordSavedJob(chrome.storage.local, { objectId, title, company, url: tab.url ?? '', savedAt: Date.now() }).catch(
+      () => {},
+    );
+  }
+  await show(tabId, resultOverlay(result));
 }
-
-chrome.action.onClicked.addListener((tab) => void saveCurrentTab(tab));

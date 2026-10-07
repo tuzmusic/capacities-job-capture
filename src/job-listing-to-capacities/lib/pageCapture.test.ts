@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { capturePage, type PageCapture } from './pageCapture.ts';
 import { pickBestCapture } from './pickBestCapture.ts';
 
-const fixture = readFileSync(resolve(__dirname, '../../test/fixtures/greenhouse-like.html'), 'utf8');
+const fixture = readFileSync(resolve(__dirname, '../../../test/fixtures/greenhouse-like.html'), 'utf8');
 
 function load(html: string, url = 'https://job-boards.greenhouse.io/postscript/jobs/8488222002') {
   document.documentElement.innerHTML = html.replace(/^[\s\S]*?<html>|<\/html>\s*$/g, '');

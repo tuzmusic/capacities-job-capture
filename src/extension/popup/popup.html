@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Capacities Job Capture</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #fff; --fg: #1d1d1f; --muted: #6e6e73; --hover: #f2f2f7; --key: #e5e5ea;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root { --bg: #1c1c1e; --fg: #f2f2f7; --muted: #aeaeb2; --hover: #2c2c2e; --key: #3a3a3c; }
+      }
+      body { margin: 0; width: 320px; background: var(--bg); color: var(--fg); font: 13px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      ul { list-style: none; margin: 0; padding: 6px; }
+      button {
+        all: unset; box-sizing: border-box; width: 100%; display: flex; gap: 10px; align-items: flex-start;
+        padding: 8px 10px; border-radius: 6px; cursor: pointer;
+      }
+      button:hover, button:focus-visible { background: var(--hover); }
+      kbd { flex: none; min-width: 18px; text-align: center; padding: 1px 4px; border-radius: 4px; background: var(--key); font: 600 11px/16px ui-monospace, monospace; }
+      .label { font-weight: 600; }
+      .hint { color: var(--muted); font-size: 12px; }
+      footer { padding: 6px 16px 10px; color: var(--muted); font-size: 12px; }
+      footer a { color: inherit; }
+    </style>
+  </head>
+  <body>
+    <ul id="menu"></ul>
+    <footer><a href="#" id="options">Options</a></footer>
+    <script type="module" src="./popup.ts"></script>
+  </body>
+</html>
