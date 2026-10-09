@@ -1,13 +1,43 @@
 # Capacities Job Capture
 
-Chrome extension (MV3) for job hunting with Capacities. Click the toolbar icon (or press **Alt+Shift+J**) for a menu,
-then click an item or press its number:
+**One click turns a job posting into a structured note in [Capacities](https://capacities.io), or finds everyone you
+know at the company.** The note gets the title, salary, a clean copy of the description, and exactly what the
+application will ask of you. Your connections go into that same note, grouped by who can introduce you.
 
-1. **Save Job Listing to Capacities**: saves the job posting in the current tab as a **Job** object.
-2. **Scroll Page & Get Mutuals**: on a LinkedIn company page, loads its Engineering people and adds your mutual
-   connections to that company's Job.
+## Why
 
-Each item can also get its own shortcut in `chrome://extensions/shortcuts`, which skips the menu.
+Every job you're considering raises the same questions: what does it pay, is a cover letter required, how many essay
+questions are on the form, and do I know anyone there? Answering them means clicking through to the application
+(often on a different site), reading past three screens of benefits copy, and scrolling a company's LinkedIn people
+page for mutual connections, for every job.
+
+This extension does that legwork and files the answers where you're tracking the search, so you can triage at a glance:
+an **easy-apply** tag means no cover letter and no questions; *Cover letter (required)* plus four essay prompts means
+block out an evening.
+
+## What it does
+
+1. **Save Job Listing to Capacities.** Captures the posting in your current tab (including logged-in and embedded ATS
+   pages), finds the application form even when it's on a separate page, and writes a Job with salary, application
+   requirements, and a clean copy of the description.
+2. **Scroll Page & Get Mutuals.** On a LinkedIn company page, loads the full Engineering people list and writes your 1st-
+   and 2nd-degree connections into that company's Job, grouped by who can introduce you.
+
+Click the toolbar icon (or press **Alt+Shift+J**) for the menu, then click an item or press its number. Each item can
+also get its own shortcut in `chrome://extensions/shortcuts`.
+
+## How it's built
+
+- **Chrome MV3**, **TypeScript**, **Vite** + **CRXJS**, tested with **Vitest** + happy-dom (no network or keys needed).
+- **Claude Haiku** with structured output (**Zod** schema) for the judgment calls: salary, which form questions take
+  real work. Deterministic filtering (dropping choice/contact fields, stripping benefits/EEO sections by heading) is
+  done in code first, so the model sees less and costs well under a cent per job.
+- **Readability** + **Turndown** to get the job description as clean markdown.
+- **Greenhouse public API** for Greenhouse forms; for Lever, Ashby, and in-page "Apply" buttons, the form is read from a
+  background tab so your tab is never touched.
+- The **Capacities API** for creating objects, appending to a specific section, and finding the right Job by company.
+- Each menu item is an independent module; everything testable takes its dependencies (API clients, fetch, storage) as
+  arguments, and `run.ts` is thin Chrome wiring on top. Details below.
 
 ## Save Job Listing to Capacities
 
@@ -15,7 +45,7 @@ Each item can also get its own shortcut in `chrome://extensions/shortcuts`, whic
   under a cent).
 - **Application Reqs** always starts with *Cover letter (required)*, *Optional cover letter*, or *No cover letter!*,
   then lists only the questions that take work. Choice fields (selects, comboboxes, checkboxes, radios) and contact
-  fields are dropped in code (`src/lib/formFields.ts`); Haiku judges the free-text fields that remain.
+  fields are dropped in code (`src/job-listing-to-capacities/lib/formFields.ts`); Haiku judges the free-text fields that remain.
 - **Separate apply pages:** if the form isn't on the page you captured, it looks for it. Greenhouse jobs go through
   Greenhouse's public job board API. Lever (`/apply`), Ashby (`/application`), and any page's own "Apply" link are
   opened in a background tab, captured, and closed. With no link, an in-page "Apply" button (modal, tab, client-side
@@ -26,7 +56,7 @@ Each item can also get its own shortcut in `chrome://extensions/shortcuts`, whic
 - Filled sections start with their content: the empty line the Job template puts in each section is removed once
   something's written there (a section left empty keeps it, so it can still be typed in).
 - **Job Description** is copied verbatim (Readability → markdown). Sections like Benefits, Perks, "Why join us", and EEO
-  are dropped by heading, with no AI involved. The patterns are in `src/lib/sectionFilter.ts` (`DROP_HEADINGS`).
+  are dropped by heading, with no AI involved. The patterns are in `src/job-listing-to-capacities/lib/sectionFilter.ts` (`DROP_HEADINGS`).
 - **Status** defaults to *Info Gathering*. Everything else is left for you.
 - Reads the tab you're already looking at, including embedded ATS iframes (`company.com/careers?gh_jid=...`), so
   JS-rendered and logged-in pages work.
