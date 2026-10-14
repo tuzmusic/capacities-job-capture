@@ -47,8 +47,8 @@ also get its own shortcut in `chrome://extensions/shortcuts`.
 
 - **Title, Position, Salary range, Application Reqs** are filled by Claude Haiku from the page text (one call, well
   under a cent).
-- **Application Reqs** always starts with *Cover letter (required)*, *Optional cover letter*, or *No cover letter!*,
-  then lists only the questions that take work. Choice fields (selects, comboboxes, checkboxes, radios) and contact
+- **Application Reqs** starts with *Cover letter (required)* or *Cover letter (optional)* (nothing when there's no
+  cover letter), then lists only the questions that take work. Choice fields (selects, comboboxes, checkboxes, radios) and contact
   fields are dropped in code (`src/job-listing-to-capacities/lib/formFields.ts`); Haiku judges the free-text fields that remain.
 - **Separate apply pages:** if the form isn't on the page you captured, it looks for it. Greenhouse jobs go through
   Greenhouse's public job board API. Lever (`/apply`), Ashby (`/application`), and any page's own "Apply" link are
@@ -57,8 +57,8 @@ also get its own shortcut in `chrome://extensions/shortcuts`.
   multi-step forms). When the form still can't be read, Haiku adds a short reason, like "(Workday)" or "(needs login)".
 - **easy-apply** tag is added when there's no required cover letter and no questions at all (an optional cover letter
   doesn't count, optional questions do). Only when the application form was found; otherwise Application Reqs says to check.
-- Filled sections start with their content: the empty line the Job template puts in each section is removed once
-  something's written there (a section left empty keeps it, so it can still be typed in).
+- Filled sections start with their content: the empty lines at the top of a section (the Job template puts one in each)
+  are removed once something's written there, by either menu item (a section left empty keeps it, so it can still be typed in).
 - **Job Description** is copied verbatim (Readability → markdown). Sections like Benefits, Perks, "Why join us", and EEO
   are dropped by heading, with no AI involved. The patterns are in `src/job-listing-to-capacities/lib/sectionFilter.ts` (`DROP_HEADINGS`).
 - **Status** defaults to *Info Gathering*. Everything else is left for you.

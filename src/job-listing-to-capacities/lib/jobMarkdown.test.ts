@@ -58,14 +58,14 @@ describe('buildJobMarkdown', () => {
 describe('buildJobSections', () => {
   it('returns application reqs and the description separately', () => {
     expect(buildJobSections(base)).toEqual({
-      applicationReqs: 'Optional cover letter\n\n- Why Postscript?',
+      applicationReqs: 'Cover letter (optional)\n\n- Why Postscript?',
       jobDescription: '## The Role\n\nBuild things.',
     });
   });
 
-  it('always fills application reqs, even with nothing to do', () => {
+  it('omits application reqs when there is nothing to do', () => {
     const s = buildJobSections({ ...base, application: { coverLetter: 'none', questions: [], formFound: true } });
-    expect(s.applicationReqs).toBe('No cover letter!');
+    expect(s).not.toHaveProperty('applicationReqs');
   });
 
   it('omits the description when empty', () => {
@@ -86,10 +86,10 @@ const reqs = (over: Partial<ApplicationReqs> = {}): ApplicationReqs => ({
 });
 
 describe('formatApplicationReqs', () => {
-  it('always starts with one of the three cover letter lines', () => {
+  it('starts with the cover letter line, or says nothing when there is no cover letter', () => {
     expect(formatApplicationReqs(reqs({ coverLetter: 'required' }))).toBe('Cover letter (required)');
-    expect(formatApplicationReqs(reqs({ coverLetter: 'optional' }))).toBe('Optional cover letter');
-    expect(formatApplicationReqs(reqs({ coverLetter: 'none' }))).toBe('No cover letter!');
+    expect(formatApplicationReqs(reqs({ coverLetter: 'optional' }))).toBe('Cover letter (optional)');
+    expect(formatApplicationReqs(reqs({ coverLetter: 'none' }))).toBe('');
   });
 
   it('lists the questions, marking optional ones', () => {
@@ -101,12 +101,12 @@ describe('formatApplicationReqs', () => {
         ],
       }),
     );
-    expect(md).toBe('No cover letter!\n\n- Why us?\n- Link a project you are proud of _(optional)_');
+    expect(md).toBe('- Why us?\n- Link a project you are proud of _(optional)_');
   });
 
   it('warns when the application form could not be read', () => {
     expect(formatApplicationReqs(reqs({ formFound: false }))).toBe(
-      "No cover letter!\n\n_Couldn't read the application form, so there may be more. Check before applying._",
+      "_Couldn't read the application form, so there may be more. Check before applying._",
     );
   });
 
