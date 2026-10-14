@@ -23,6 +23,9 @@
       <label>Capacities API token <span class="hint">(Capacities → Settings → Capacities API)</span>
         <input id="capacitiesApiToken" type="password" autocomplete="off" spellcheck="false" />
       </label>
+      <label>Google Sheet web app URL <span class="hint">(for Add Reachouts to Sheet; see src/log-reachouts/apps-script/Code.gs)</span>
+        <input id="sheetWebhookUrl" type="url" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec" />
+      </label>
       <button type="submit">Save</button><span id="status"></span>
     </form>
     <script type="module" src="./options.ts"></script>

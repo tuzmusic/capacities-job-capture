@@ -2,16 +2,25 @@ export type OverlayTone = 'busy' | 'success' | 'warning' | 'error';
 
 export interface OverlayAction {
   label: string;
-  /** Copies this text to the clipboard when clicked. */
+  /** Copies this text to the clipboard when clicked. Each `{input}` in it becomes the input's value, on one line. */
   copy?: string;
-  /** Sent to the background with chrome.runtime.sendMessage when clicked. */
+  /** With `copy`: also put this on the clipboard as text/html, which rich-text targets like Sheets prefer. `{input}` too. */
+  copyHtml?: string;
+  /** Sent to the background with chrome.runtime.sendMessage when clicked, with the input's value as `input` if there is one. */
   message?: unknown;
+}
+
+/** A text box above the buttons, for something to check or fix before acting. */
+export interface OverlayInput {
+  label: string;
+  value: string;
 }
 
 export interface OverlayState {
   tone: OverlayTone;
   heading: string;
   detail?: string;
+  input?: OverlayInput;
   actions?: OverlayAction[];
 }
 
@@ -50,7 +59,7 @@ export function showOverlay(state: OverlayState): void {
     .body { flex: 1; min-width: 0; }
     .heading { font-weight: 600; }
     .detail { margin-top: 2px; overflow-wrap: anywhere; white-space: pre-line; color: #555; }
-    .actions { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+    .actions { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 10px; }
     .dismiss {
       all: unset; cursor: pointer; padding: 0 4px; font-size: 18px; line-height: 1; color: #888;
     }
@@ -61,11 +70,16 @@ export function showOverlay(state: OverlayState): void {
     }
     .action:hover { border-color: var(--accent); }
     .action:disabled { cursor: default; opacity: .5; }
+    .field { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; font-weight: 600; }
+    .field input {
+      font: inherit; font-weight: normal; padding: 5px 8px; border-radius: 6px; border: 1px solid #d2d2d7;
+      background: transparent; color: inherit;
+    }
     @media (prefers-color-scheme: dark) {
       .card { background: #2c2c2e; color: #f2f2f7; box-shadow: 0 6px 24px rgba(0,0,0,.5); }
       .detail { color: #aeaeb2; }
       .dismiss:hover { color: #f2f2f7; }
-      .action { border-color: #48484a; }
+      .action, .field input { border-color: #48484a; }
     }
   `;
 
@@ -86,6 +100,20 @@ export function showOverlay(state: OverlayState): void {
     body.append(d);
   }
 
+  let field: HTMLInputElement | null = null;
+  if (state.input) {
+    const label = document.createElement('label');
+    label.className = 'field';
+    label.textContent = state.input.label;
+    field = document.createElement('input');
+    field.type = 'text';
+    field.value = state.input.value;
+    field.spellcheck = false;
+    label.append(field);
+    body.append(label);
+  }
+  const inputValue = () => (field?.value ?? '').replace(/\s+/g, ' ').trim();
+
   if (state.actions?.length) {
     const actions = document.createElement('div');
     actions.className = 'actions';
@@ -96,7 +124,22 @@ export function showOverlay(state: OverlayState): void {
       b.textContent = action.label;
       b.addEventListener('click', () => {
         if (action.copy !== undefined) {
-          navigator.clipboard.writeText(action.copy).then(
+          const value = inputValue();
+          const text = action.copy.replaceAll('{input}', value);
+          const html = action.copyHtml?.replaceAll(
+            '{input}',
+            value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
+          );
+          const written =
+            html === undefined || typeof ClipboardItem === 'undefined'
+              ? navigator.clipboard.writeText(text)
+              : navigator.clipboard.write([
+                  new ClipboardItem({
+                    'text/plain': new Blob([text], { type: 'text/plain' }),
+                    'text/html': new Blob([html], { type: 'text/html' }),
+                  }),
+                ]);
+          written.then(
             () => (b.textContent = 'Copied'),
             () => (b.textContent = "Couldn't copy"),
           );
@@ -104,13 +147,21 @@ export function showOverlay(state: OverlayState): void {
         if (action.message !== undefined) {
           // Only one of these goes through; the background redraws the overlay with the outcome.
           for (const other of buttons) other.disabled = true;
-          (globalThis as { chrome?: typeof chrome }).chrome?.runtime?.sendMessage(action.message);
+          const message = field ? { ...(action.message as object), input: inputValue() } : action.message;
+          (globalThis as { chrome?: typeof chrome }).chrome?.runtime?.sendMessage(message);
         }
       });
       return b;
     });
     actions.append(...buttons);
     body.append(actions);
+    // Enter in the input is the first button. Keys stay out of the page, so its shortcuts don't fire while typing.
+    field?.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') buttons[0]?.click();
+    });
+    field?.addEventListener('keyup', (e) => e.stopPropagation());
+    field?.addEventListener('keypress', (e) => e.stopPropagation());
   }
 
   const dismiss = document.createElement('button');

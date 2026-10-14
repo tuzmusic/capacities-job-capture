@@ -7,13 +7,13 @@ describe('loadSettings', () => {
   it('returns both keys when set', async () => {
     await expect(loadSettings(storage({ anthropicApiKey: 'sk-ant-x', capacitiesApiToken: 'cap-api-y' }))).resolves.toEqual({
       ok: true,
-      settings: { anthropicApiKey: 'sk-ant-x', capacitiesApiToken: 'cap-api-y' },
+      settings: { anthropicApiKey: 'sk-ant-x', capacitiesApiToken: 'cap-api-y', sheetWebhookUrl: '' },
     });
   });
 
   it('trims whitespace from pasted keys', async () => {
     const result = await loadSettings(storage({ anthropicApiKey: ' sk-ant-x\n', capacitiesApiToken: ' cap-api-y ' }));
-    expect(result).toEqual({ ok: true, settings: { anthropicApiKey: 'sk-ant-x', capacitiesApiToken: 'cap-api-y' } });
+    expect(result).toEqual({ ok: true, settings: { anthropicApiKey: 'sk-ant-x', capacitiesApiToken: 'cap-api-y', sheetWebhookUrl: '' } });
   });
 
   it('names the missing keys', async () => {
@@ -30,7 +30,7 @@ describe('loadSettings', () => {
   it('only requires the keys asked for', async () => {
     await expect(loadSettings(storage({ capacitiesApiToken: 'cap-api-y' }), ['capacitiesApiToken'])).resolves.toEqual({
       ok: true,
-      settings: { anthropicApiKey: '', capacitiesApiToken: 'cap-api-y' },
+      settings: { anthropicApiKey: '', capacitiesApiToken: 'cap-api-y', sheetWebhookUrl: '' },
     });
   });
 });

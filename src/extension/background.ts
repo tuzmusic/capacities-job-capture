@@ -1,10 +1,13 @@
 import { saveJobListing } from '../job-listing-to-capacities/run.ts';
+import { addReachoutsToSheet, copyReachouts, onReachoutsMessage } from '../log-reachouts/run.ts';
 import { onMutualsMessage, scrollPageAndGetMutuals } from '../scroll-page-and-get-mutuals/run.ts';
 import { RUN_TASK_MESSAGE, type RunTaskMessage, type TaskId } from './menu.ts';
 
 const TASKS: Record<TaskId, (tab: chrome.tabs.Tab) => Promise<void>> = {
   'job-listing-to-capacities': saveJobListing,
   'scroll-page-and-get-mutuals': scrollPageAndGetMutuals,
+  'copy-reachouts': copyReachouts,
+  'add-reachouts-to-sheet': addReachoutsToSheet,
 };
 
 const isTaskId = (id: unknown): id is TaskId => typeof id === 'string' && Object.hasOwn(TASKS, id);
@@ -18,7 +21,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     sendResponse({ ok: true });
     return;
   }
-  onMutualsMessage(message, sender);
+  if (!onMutualsMessage(message, sender)) onReachoutsMessage(message, sender);
 });
 
 // Each task can also have its own keyboard shortcut (chrome://extensions/shortcuts).
