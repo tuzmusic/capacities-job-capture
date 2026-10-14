@@ -5,9 +5,11 @@ import { capturePage, type PageCapture } from './pageCapture.ts';
 import { pickBestCapture } from './pickBestCapture.ts';
 
 const fixture = readFileSync(resolve(__dirname, '../../../test/fixtures/greenhouse-like.html'), 'utf8');
+/** Happy Money's posting, scripts and stylesheets removed. */
+const eeoSurveyFixture = readFileSync(resolve(__dirname, '../../../test/fixtures/greenhouse-eeo-survey.html'), 'utf8');
 
 function load(html: string, url = 'https://job-boards.greenhouse.io/postscript/jobs/8488222002') {
-  document.documentElement.innerHTML = html.replace(/^[\s\S]*?<html>|<\/html>\s*$/g, '');
+  document.documentElement.innerHTML = html.replace(/^[\s\S]*?<html[^>]*>|<\/html>\s*$/g, '');
   return capturePage(document, url);
 }
 
@@ -39,6 +41,12 @@ describe('capturePage', () => {
     expect(descriptionMarkdown).not.toContain('Unlimited PTO');
     expect(descriptionMarkdown).not.toContain('equal opportunity employer');
     expect(descriptionMarkdown).toContain('$172,000 - $203,000');
+  });
+
+  it("takes the posting over the application form's EEO survey, which Readability would otherwise prefer", () => {
+    const { descriptionMarkdown } = load(eeoSurveyFixture, 'https://job-boards.greenhouse.io/happymoney/jobs/4431029009');
+    expect(descriptionMarkdown).toContain('ABOUT THE ROLE');
+    expect(descriptionMarkdown).not.toContain('self-identification survey');
   });
 
   it('leaves out site chrome like nav and footer', () => {

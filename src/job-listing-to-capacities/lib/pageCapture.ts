@@ -27,8 +27,11 @@ const turndown = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-
 turndown.remove(['script', 'style', 'noscript', 'button', 'form', 'iframe']);
 
 function mainContentHtml(doc: Document): string {
-  // Readability mutates the document it parses, so hand it a copy.
-  const article = new Readability(doc.cloneNode(true) as Document).parse();
+  // Readability mutates the document it parses, so hand it a copy. Forms are never the posting, but their prose (e.g.
+  // Greenhouse's EEO survey) can outscore a posting that's mostly lists.
+  const copy = doc.cloneNode(true) as Document;
+  copy.querySelectorAll('form').forEach((f) => f.remove());
+  const article = new Readability(copy).parse();
   if (article?.content && (article.textContent ?? '').trim().length >= MIN_ARTICLE_CHARS) return article.content;
   return doc.body?.innerHTML ?? '';
 }
