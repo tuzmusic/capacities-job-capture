@@ -22,6 +22,10 @@ block out an evening.
    requirements, and a clean copy of the description.
 2. **Scroll Page & Get Mutuals.** On a LinkedIn company page, loads the full Engineering people list and writes your 1st-
    and 2nd-degree connections into that company's Job, grouped by who can introduce you.
+3. **Copy Reachouts.** Turns the LinkedIn profiles open in the current window into rows for your contacts
+   spreadsheet, with linked names, ready to paste.
+4. **Add Reachouts to Sheet.** The same rows, written straight into the sheet through a small Apps Script web app
+   (once it's set up).
 
 Click the toolbar icon (or press **Alt+Shift+J**) for the menu, then click an item or press its number. Each item can
 also get its own shortcut in `chrome://extensions/shortcuts`.
@@ -89,6 +93,34 @@ also get its own shortcut in `chrome://extensions/shortcuts`.
   *Copy markdown* button.
 - Only needs the Capacities token; no AI.
 
+## Copy Reachouts / Add Reachouts to Sheet
+
+- **Where:** any tab. Both read every `linkedin.com/in/…` tab in the current window (in tab order, each profile once,
+  not your own `/in/me`), all at once, with no navigation or AI.
+- **The dialog** lists who it found and has a **Company** box, since you run this for one company at a time. It's
+  pre-filled from the company's LinkedIn tab in the window (its People page first; the page heading, else the tab
+  title, else the URL), or else the company most of the profiles list as current. Fix it if needed, then press the
+  button (or Enter).
+- **The row** matches the sheet's first six columns, *Company | Name | Role | Date | Notes | Type*:
+
+  ```
+  Sardine	=HYPERLINK("https://www.linkedin.com/in/levonmk/","Levon Mkrtchyan")		10/9/2026		Connection Request
+  ```
+
+  Type is always *Connection Request*. Role and Notes stay blank. A tab that can't
+  be read (discarded, frozen) still gets a row, named from its tab title.
+- **Copy Reachouts** puts the rows on the clipboard twice over: as an HTML table whose names are real links (what a
+  normal paste in Sheets uses, so there's no formula to fix), and as tab-separated text with the HYPERLINK formulas
+  (what *Paste values only* / Cmd+Shift+V uses). It never touches the sheet.
+- **Add Reachouts to Sheet** posts the rows to an Apps Script web app bound to the sheet, which writes them after the
+  last row with a Company or Name (the Incoming/Pushed checkboxes are left alone). Nothing is written until you press
+  *Add N rows to the sheet*. Until it's set up, it just says so. One-time setup:
+  1. In the sheet: Extensions → Apps Script, paste `src/log-reachouts/apps-script/Code.gs`, save.
+  2. Deploy → New deployment → Web app; execute as **Me**, access **Anyone**. Authorize.
+  3. Paste the `/exec` URL into the extension's Options as *Google Sheet web app URL*.
+
+  Anyone with the URL can append rows, so keep it private like the API keys.
+
 ## Setup
 
 ```bash
@@ -99,6 +131,7 @@ npm run build        # then chrome://extensions → Developer mode → Load unpa
 Open the extension's **Options** and paste:
 - an Anthropic API key (console.anthropic.com)
 - a Capacities API token (Capacities → Settings → Capacities API)
+- optionally, the Google Sheet web app URL (see *Add Reachouts to Sheet* above)
 
 Keys are stored in `chrome.storage.local` on this device. This is a personal, unpacked extension; don't publish it.
 
@@ -119,6 +152,7 @@ src/
   shared/                       Capacities API, settings, overlay dialog, tab helpers, saved-jobs registry
   job-listing-to-capacities/    meta.ts (menu entry), run.ts (the task), content/, lib/
   scroll-page-and-get-mutuals/  same shape
+  log-reachouts/                same shape, plus apps-script/ (pasted into the sheet, not built)
 ```
 
 To add a menu item: make a folder with the same shape, then add its `meta.ts` to `src/extension/menu.ts` and its task
@@ -151,6 +185,14 @@ storage) as arguments. `run.ts` is thin Chrome wiring on top.
 | `loadAllPeople.ts` | The click / retry / reload loop |
 | `mutualsMarkdown.ts` | People → the contacts markdown |
 | `findJobNotes.ts` | Which Job notes belong to the company |
+
+**log-reachouts/lib**
+
+| Module | Does |
+|---|---|
+| `profilePage.ts` | Profile page → name, current company, headline (runs inside the page) |
+| `reachoutRows.ts` | Profile and company page URLs, the company name guess, the sheet's row format, TSV for the clipboard |
+| `sheetWebhook.ts` | Posts rows to the sheet's Apps Script web app |
 
 **shared**
 

@@ -70,6 +70,55 @@ describe('showOverlay', () => {
     expect(buttons().every((b) => b.disabled)).toBe(true);
   });
 
+  it('puts the input’s value into copied text and sent messages', () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const sendMessage = vi.fn();
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    vi.stubGlobal('chrome', { runtime: { sendMessage } });
+    showOverlay({
+      tone: 'success',
+      heading: '2 reachouts',
+      input: { label: 'Company', value: 'Sardine' },
+      actions: [
+        { label: 'Copy', copy: '{input}\tA\n{input}\tB' },
+        { label: 'Add', message: { type: 'add' } },
+      ],
+    });
+    const input = host()!.shadowRoot!.querySelector('input')!;
+    expect(input.value).toBe('Sardine');
+    input.value = '  Sardine\tAI ';
+    buttons()[0].click();
+    expect(writeText).toHaveBeenCalledWith('Sardine AI\tA\nSardine AI\tB');
+    buttons()[1].click();
+    expect(sendMessage).toHaveBeenCalledWith({ type: 'add', input: 'Sardine AI' });
+  });
+
+  it('copies text and HTML together when there is HTML, escaping the input in the HTML', async () => {
+    const write = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { clipboard: { write } });
+    vi.stubGlobal('ClipboardItem', class {
+      constructor(public items: Record<string, Blob>) {}
+    });
+    showOverlay({
+      tone: 'success',
+      heading: 'x',
+      input: { label: 'Company', value: 'A&B' },
+      actions: [{ label: 'Copy', copy: '{input}\tx', copyHtml: '<td>{input}</td>' }],
+    });
+    buttons()[0].click();
+    const [[item]] = write.mock.calls[0] as [[{ items: Record<string, Blob> }]];
+    expect(await item.items['text/plain'].text()).toBe('A&B\tx');
+    expect(await item.items['text/html'].text()).toBe('<td>A&amp;B</td>');
+  });
+
+  it('runs the first action on Enter in the input', () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    showOverlay({ tone: 'success', heading: 'x', input: { label: 'Company', value: 'Figma' }, actions: [{ label: 'Copy', copy: '{input}' }] });
+    host()!.shadowRoot!.querySelector('input')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    expect(writeText).toHaveBeenCalledWith('Figma');
+  });
+
   it('is self-contained so it can be injected with chrome.scripting.executeScript', () => {
     // executeScript serializes the function source; any closure over module scope would break at runtime.
     const src = showOverlay.toString();
