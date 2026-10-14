@@ -30,10 +30,11 @@ export const DEFAULT_STATUS = 'Info Gathering';
 /** An existing tag in Jonathan's space. */
 export const EASY_APPLY_TAG = 'easy-apply';
 
-const COVER_LETTER_LINE: Record<ApplicationReqs['coverLetter'], string> = {
+/** Nothing when there's no cover letter: the section just lists what there is to do. */
+const COVER_LETTER_LINE: Record<ApplicationReqs['coverLetter'], string | null> = {
   required: 'Cover letter (required)',
-  optional: 'Optional cover letter',
-  none: 'No cover letter!',
+  optional: 'Cover letter (optional)',
+  none: null,
 };
 
 const formNotFoundNote = (why?: string | null) =>
@@ -44,14 +45,13 @@ export function isEasyApply(app: ApplicationReqs): boolean {
   return app.formFound && app.coverLetter !== 'required' && app.questions.length === 0;
 }
 
-/** The Application Reqs section: always the cover letter line, then the questions that take work. */
+/** The Application Reqs section: the cover letter line (if one is asked for), the questions that take work, and a
+ * note if the form couldn't be read. Empty when there's nothing to do. */
 export function formatApplicationReqs(app: ApplicationReqs): string {
-  const lines = [COVER_LETTER_LINE[app.coverLetter]];
-  if (app.questions.length) {
-    lines.push('', ...app.questions.map((q) => `- ${q.question.trim()}${q.required ? '' : ' _(optional)_'}`));
-  }
-  if (!app.formFound) lines.push('', formNotFoundNote(app.formNote));
-  return lines.join('\n');
+  const coverLetter = COVER_LETTER_LINE[app.coverLetter];
+  const questions = app.questions.map((q) => `- ${q.question.trim()}${q.required ? '' : ' _(optional)_'}`).join('\n');
+  const parts = [coverLetter, questions, app.formFound ? '' : formNotFoundNote(app.formNote)];
+  return parts.filter(Boolean).join('\n\n');
 }
 
 /** JSON strings are valid YAML double-quoted scalars. */
@@ -76,9 +76,11 @@ export function buildJobMarkdown(input: JobDocInput): string {
   return `---\n${lines.join('\n')}\n---\n`;
 }
 
-/** Markdown for each body section we fill. Application Reqs is always filled; an empty description is omitted. */
+/** Markdown for each body section we fill. An empty section is omitted, keeping the template's empty line. */
 export function buildJobSections(input: Pick<JobDocInput, 'application' | 'description'>): Partial<Record<JobSection, string>> {
-  const sections: Partial<Record<JobSection, string>> = { applicationReqs: formatApplicationReqs(input.application) };
+  const sections: Partial<Record<JobSection, string>> = {};
+  const reqs = formatApplicationReqs(input.application);
+  if (reqs) sections.applicationReqs = reqs;
   const description = demoteH1s(input.description.trim());
   if (description) sections.jobDescription = description;
   return sections;

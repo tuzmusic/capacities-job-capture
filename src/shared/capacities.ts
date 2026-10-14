@@ -61,32 +61,6 @@ export async function createObjectFromMarkdown({
   return { id };
 }
 
-/**
- * One empty paragraph: what the Job template puts in a blank section. A section with no blocks at all can't be clicked
- * into or typed in, and the API turns empty markdown into no blocks, so this has to be sent as a block.
- */
-export const EMPTY_PARAGRAPH = {
-  type: 'TextBlock',
-  tokens: [{ type: 'TextToken', text: '', style: {} }],
-  hierarchy: { key: 'Base', val: 0 },
-} as const;
-
-/** `POST /blocks/append`: adds markdown (or raw blocks) as blocks to one block-content property (section) of an existing object. */
-export async function appendBlocks({
-  fetch,
-  token,
-  id,
-  propertyId,
-  ...content
-}: {
-  fetch: typeof globalThis.fetch;
-  token: string;
-  id: string;
-  propertyId: string;
-} & ({ markdown: string } | { blocks: readonly object[] })): Promise<void> {
-  await post(fetch, token, '/blocks/append', { id, propertyId, ...content });
-}
-
 interface ApiBlock {
   id: string;
   type: string;
@@ -94,13 +68,36 @@ interface ApiBlock {
   blocks?: unknown[];
 }
 
+/** `POST /blocks/append`: adds markdown as blocks to one block-content property (section) of an existing object. Returns
+ * that section's blocks afterwards. */
+export async function appendBlocks({
+  fetch,
+  token,
+  id,
+  propertyId,
+  markdown,
+}: {
+  fetch: typeof globalThis.fetch;
+  token: string;
+  id: string;
+  propertyId: string;
+  markdown: string;
+}): Promise<ApiBlock[]> {
+  const res = await post(fetch, token, '/blocks/append', { id, propertyId, markdown });
+  const body = (await res.json().catch(() => ({}))) as { blocks?: Record<string, ApiBlock[]> };
+  return body.blocks?.[propertyId] ?? [];
+}
+
 const isEmptyParagraph = (b: ApiBlock) =>
   b.type === 'TextBlock' && !b.blocks?.length && (b.tokens ?? []).every((t) => t.type === 'TextToken' && !t.text);
 
 /**
- * Appends markdown to a section, then removes the section's placeholder: the one empty line the Job template puts in
- * a blank section, which would otherwise sit above what we wrote. Only when that empty line was all the section had
- * and we actually wrote something, so a section is never left with no blocks (which can't be clicked into).
+ * Appends markdown to a section, then removes the empty lines at the top of the section (the Job template puts one in
+ * each), which would otherwise sit above the content. Only when there's content below them, so a section is never left
+ * with no blocks (which can't be clicked into).
+ *
+ * The block ids come from the append's response: an untouched template block gets a new id on every read, so an id
+ * read before the append no longer exists.
  */
 export async function appendToSection({
   fetch,
@@ -115,13 +112,10 @@ export async function appendToSection({
   propertyId: string;
   markdown: string;
 }): Promise<void> {
-  const before = await request(fetch, token, `/object?id=${encodeURIComponent(id)}`, { method: 'GET' })
-    .then(async (res) => ((await res.json()) as { blocks?: Record<string, ApiBlock[]> }).blocks?.[propertyId] ?? [])
-    .catch(() => [] as ApiBlock[]);
-  await appendBlocks({ fetch, token, id, propertyId, markdown });
-  const [placeholder] = before;
-  if (markdown.trim() && before.length === 1 && isEmptyParagraph(placeholder)) {
-    const query = `objectId=${encodeURIComponent(id)}&blockId=${encodeURIComponent(placeholder.id)}`;
+  const blocks = await appendBlocks({ fetch, token, id, propertyId, markdown });
+  const firstContent = blocks.findIndex((b) => !isEmptyParagraph(b));
+  for (const blank of firstContent > 0 ? blocks.slice(0, firstContent) : []) {
+    const query = `objectId=${encodeURIComponent(id)}&blockId=${encodeURIComponent(blank.id)}`;
     await request(fetch, token, `/block?${query}`, { method: 'DELETE' }).catch(() => {}); // cosmetic only
   }
 }

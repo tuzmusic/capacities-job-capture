@@ -26,14 +26,13 @@ const fields: JobFields = {
 const noForm = { found: false, fields: [] };
 
 function deps(
-  overrides: { findForm?: Mock; extract?: Mock; create?: Mock; appendSection?: Mock; appendEmptyLine?: Mock } = {},
+  overrides: { findForm?: Mock; extract?: Mock; create?: Mock; appendSection?: Mock } = {},
 ) {
   return {
     findForm: vi.fn().mockResolvedValue({ form: noForm, missedApplyPage: null }),
     extract: vi.fn().mockResolvedValue(fields),
     create: vi.fn().mockResolvedValue({ id: 'obj-9' }),
     appendSection: vi.fn().mockResolvedValue(undefined),
-    appendEmptyLine: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -128,7 +127,7 @@ describe('saveJob', () => {
       const d = deps();
       await saveJob(grafana, d);
       expect(d.create.mock.calls[0][0]).toContain('tags: easy-apply');
-      expect(d.appendSection.mock.calls[0]).toEqual(['obj-9', 'applicationReqs', 'No cover letter!']);
+      expect(d.appendSection.mock.calls.map((c) => c[1])).toEqual(['jobDescription']);
     });
 
     it("doesn't tag easy-apply when the form couldn't be found, and says why if the AI could tell", async () => {
@@ -167,30 +166,18 @@ describe('saveJob', () => {
       expect(d.create.mock.invocationCallOrder[0]).toBeLessThan(d.appendSection.mock.invocationCallOrder[0]);
     });
 
-    it('gives the first section, which the empty body leaves with no blocks, an empty line so it can be edited', async () => {
+    it('leaves the contacts section to the template, which already has an empty line', async () => {
       const d = deps();
       await saveJob(grafana, d);
       expect(d.create.mock.calls[0][0]).toMatch(/---\n$/); // nothing after the frontmatter
-      expect(d.appendEmptyLine.mock.calls).toEqual([['obj-9', 'contacts']]);
-      expect(d.create.mock.invocationCallOrder[0]).toBeLessThan(d.appendEmptyLine.mock.invocationCallOrder[0]);
-    });
-
-    it('still fills the other sections after the empty line', async () => {
-      const d = deps();
-      await saveJob(grafana, d);
-      expect(d.appendSection.mock.calls.map((c) => c[1])).toEqual(['applicationReqs', 'jobDescription']);
-    });
-
-    it('says so if the empty line couldn\'t be added', async () => {
-      const d = deps({ appendEmptyLine: vi.fn().mockRejectedValue(new Error('Capacities error 400: bad')) });
-      await expect(saveJob(grafana, d)).resolves.toEqual({
-        status: 'error',
-        message: "Job created, but its 1st & 2nd Degree Contacts couldn't be saved: Capacities error 400: bad",
-      });
+      expect(d.appendSection.mock.calls.map((c) => c[1])).not.toContain('contacts');
     });
 
     it('says which section failed, and that the Job itself exists', async () => {
-      const d = deps({ appendSection: vi.fn().mockRejectedValue(new Error('Capacities error 400: bad')) });
+      const d = deps({
+        extract: vi.fn().mockResolvedValue({ ...fields, coverLetter: 'required' }),
+        appendSection: vi.fn().mockRejectedValue(new Error('Capacities error 400: bad')),
+      });
       await expect(saveJob(grafana, d)).resolves.toEqual({
         status: 'error',
         message: "Job created, but its Application Reqs couldn't be saved: Capacities error 400: bad",

@@ -3,7 +3,6 @@ import {
   appendBlocks,
   appendToSection,
   createObjectFromMarkdown,
-  EMPTY_PARAGRAPH,
   getObjectMarkdown,
   JOB_SECTION_PROPERTY_IDS,
   JOB_STRUCTURE_ID,
@@ -84,20 +83,10 @@ describe('appendBlocks', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('can send raw blocks instead of markdown', async () => {
-    const fetch = fakeFetch(200, {});
-    await appendBlocks({ fetch, token: 't', id: 'obj-1', propertyId: 'p', blocks: [EMPTY_PARAGRAPH] });
-    const body = JSON.parse(fetch.mock.calls[0][1].body);
-    expect(body).toEqual({ id: 'obj-1', propertyId: 'p', blocks: [EMPTY_PARAGRAPH] });
-    expect(body).not.toHaveProperty('markdown');
-  });
-
-  it('sends an empty paragraph shaped like the ones the Job template puts in blank sections', () => {
-    expect(EMPTY_PARAGRAPH).toEqual({
-      type: 'TextBlock',
-      tokens: [{ type: 'TextToken', text: '', style: {} }],
-      hierarchy: { key: 'Base', val: 0 },
-    });
+  it("returns the section's blocks from the response", async () => {
+    const blocks = [{ id: 'b1', type: 'TextBlock', tokens: [] }];
+    const fetch = fakeFetch(200, { id: 'o', blocks: { p: blocks, other: [] } });
+    await expect(appendBlocks({ fetch, token: 't', id: 'o', propertyId: 'p', markdown: 'm' })).resolves.toEqual(blocks);
   });
 
   it('reports failures the same way as create', async () => {
@@ -132,14 +121,14 @@ describe('getObjectMarkdown', () => {
 });
 
 describe('appendToSection', () => {
-  const SECTION = JOB_SECTION_PROPERTY_IDS.applicationReqs;
-  const empty = { id: 'blk-0', type: 'TextBlock', tokens: [{ type: 'TextToken', text: '', style: {} }], blocks: [] };
-  const filled = { id: 'blk-1', type: 'TextBlock', tokens: [{ type: 'TextToken', text: 'Mine', style: {} }], blocks: [] };
+  const SECTION = JOB_SECTION_PROPERTY_IDS.contacts;
+  const empty = (id: string) => ({ id, type: 'TextBlock', tokens: [{ type: 'TextToken', text: '', style: {} }], blocks: [] });
+  const filled = (id: string) => ({ id, type: 'TextBlock', tokens: [{ type: 'TextToken', text: 'Mine', style: {} }], blocks: [] });
 
-  /** Answers GET /object with `blocks` in the section, and everything else with {}. */
-  function api(blocks: object[]) {
+  /** Answers POST /blocks/append with `after` in the section, and everything else with {}. */
+  function api(after: object[]) {
     return vi.fn(async (url: RequestInfo | URL, _init?: RequestInit) =>
-      new Response(JSON.stringify(String(url).includes('/object?') ? { id: 'obj-1', blocks: { [SECTION]: blocks } } : {}), {
+      new Response(JSON.stringify(String(url).endsWith('/blocks/append') ? { id: 'obj-1', blocks: { [SECTION]: after } } : {}), {
         status: 200,
       }),
     );
@@ -147,27 +136,36 @@ describe('appendToSection', () => {
   const calls = (fetch: ReturnType<typeof api>) =>
     fetch.mock.calls.map(([url, init]) => `${(init as RequestInit).method} ${String(url).replace('https://api.capacities.io', '')}`);
 
-  it('appends, then removes the template’s empty line above it', async () => {
-    const fetch = api([empty]);
+  it('appends, then removes the empty lines above it, by the ids the append returned', async () => {
+    const fetch = api([empty('blk-0'), empty('blk-1'), filled('blk-2')]);
     await appendToSection({ fetch, token: 't', id: 'obj-1', propertyId: SECTION, markdown: 'Cover letter (required)' });
     expect(calls(fetch)).toEqual([
-      'GET /object?id=obj-1',
       'POST /blocks/append',
       'DELETE /block?objectId=obj-1&blockId=blk-0',
+      'DELETE /block?objectId=obj-1&blockId=blk-1',
     ]);
   });
 
-  it('leaves the section alone when it already had content, or had no blocks at all', async () => {
-    for (const blocks of [[filled], [empty, filled], []]) {
-      const fetch = api(blocks);
-      await appendToSection({ fetch, token: 't', id: 'obj-1', propertyId: SECTION, markdown: 'x' });
-      expect(calls(fetch)).toEqual(['GET /object?id=obj-1', 'POST /blocks/append']);
+  it('leaves empty lines below the first content alone', async () => {
+    const fetch = api([filled('blk-0'), empty('blk-1'), filled('blk-2')]);
+    await appendToSection({ fetch, token: 't', id: 'obj-1', propertyId: SECTION, markdown: 'x' });
+    expect(calls(fetch)).toEqual(['POST /blocks/append']);
+  });
+
+  it('keeps the empty line when the section has nothing else, so it stays editable', async () => {
+    for (const after of [[empty('blk-0')], []]) {
+      const fetch = api(after);
+      await appendToSection({ fetch, token: 't', id: 'obj-1', propertyId: SECTION, markdown: '  ' });
+      expect(calls(fetch)).toEqual(['POST /blocks/append']);
     }
   });
 
-  it('keeps the empty line when there was nothing to write, so the section stays editable', async () => {
-    const fetch = api([empty]);
-    await appendToSection({ fetch, token: 't', id: 'obj-1', propertyId: SECTION, markdown: '  ' });
-    expect(calls(fetch)).not.toContain('DELETE /block?objectId=obj-1&blockId=blk-0');
+  it("doesn't fail the write when a delete fails", async () => {
+    const fetch = vi.fn(async (url: RequestInfo | URL) =>
+      String(url).endsWith('/blocks/append')
+        ? new Response(JSON.stringify({ blocks: { [SECTION]: [empty('blk-0'), filled('blk-1')] } }), { status: 200 })
+        : new Response('gone', { status: 404 }),
+    );
+    await expect(appendToSection({ fetch, token: 't', id: 'obj-1', propertyId: SECTION, markdown: 'x' })).resolves.toBeUndefined();
   });
 });

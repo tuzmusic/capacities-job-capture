@@ -1,11 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import {
-  appendBlocks,
-  appendToSection,
-  createObjectFromMarkdown,
-  EMPTY_PARAGRAPH,
-  JOB_SECTION_PROPERTY_IDS,
-} from '../shared/capacities.ts';
+import { appendToSection, createObjectFromMarkdown, JOB_SECTION_PROPERTY_IDS } from '../shared/capacities.ts';
 import type { OverlayState } from '../shared/overlay.ts';
 import { recordSavedJob } from '../shared/savedJobs.ts';
 import { loadSettings } from '../shared/settings.ts';
@@ -108,14 +102,6 @@ export async function saveJobListing(tab: chrome.tabs.Tab) {
       create: (markdown) => createObjectFromMarkdown({ fetch, token: capacitiesApiToken, markdown }),
       appendSection: (id, section, markdown) =>
         appendToSection({ fetch, token: capacitiesApiToken, id, propertyId: JOB_SECTION_PROPERTY_IDS[section], markdown }),
-      appendEmptyLine: (id, section) =>
-        appendBlocks({
-          fetch,
-          token: capacitiesApiToken,
-          id,
-          propertyId: JOB_SECTION_PROPERTY_IDS[section],
-          blocks: [EMPTY_PARAGRAPH],
-        }),
     });
   } catch (err) {
     result = { status: 'error', message: err instanceof Error ? err.message : String(err) };
