@@ -13,6 +13,7 @@ const capture = (over: Partial<PageCapture> = {}): PageCapture => ({
   applicationForm: noForm,
   applyUrl: null,
   applyButton: false,
+  jobLinks: 0,
   ...over,
 });
 

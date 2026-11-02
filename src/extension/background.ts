@@ -1,4 +1,4 @@
-import { saveJobListing } from '../job-listing-to-capacities/run.ts';
+import { onJobListingMessage, saveJobListing } from '../job-listing-to-capacities/run.ts';
 import { addReachoutsToSheet, copyReachouts, onReachoutsMessage } from '../log-reachouts/run.ts';
 import { onMutualsMessage, scrollPageAndGetMutuals } from '../scroll-page-and-get-mutuals/run.ts';
 import { RUN_TASK_MESSAGE, type RunTaskMessage, type TaskId } from './menu.ts';
@@ -21,7 +21,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     sendResponse({ ok: true });
     return;
   }
-  if (!onMutualsMessage(message, sender)) onReachoutsMessage(message, sender);
+  if (!onJobListingMessage(message, sender) && !onMutualsMessage(message, sender)) onReachoutsMessage(message, sender);
 });
 
 // Each task can also have its own keyboard shortcut (chrome://extensions/shortcuts).

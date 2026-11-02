@@ -3,10 +3,14 @@ import {
   appendBlocks,
   appendToSection,
   createObjectFromMarkdown,
+  createWeblink,
+  datedLine,
   getObjectMarkdown,
   JOB_SECTION_PROPERTY_IDS,
   JOB_STRUCTURE_ID,
   searchObjects,
+  setJobPosition,
+  updatePropertiesFromMarkdown,
 } from './capacities.ts';
 
 function fakeFetch(status: number, body: unknown) {
@@ -167,5 +171,79 @@ describe('appendToSection', () => {
         : new Response('gone', { status: 404 }),
     );
     await expect(appendToSection({ fetch, token: 't', id: 'obj-1', propertyId: SECTION, markdown: 'x' })).resolves.toBeUndefined();
+  });
+});
+
+describe('datedLine', () => {
+  it("links the local day, then the text, as a closed toggle like the hand-written Interactions", () => {
+    expect(datedLine(new Date(2026, 9, 5, 23, 30), '12 reachouts')).toEqual({
+      type: 'TextBlock',
+      tokens: [
+        { type: 'LinkToken', text: ' ', date: { dateResolution: 'day', start: '2026-10-05T00:00:00.000Z', end: null } },
+        { type: 'TextToken', text: ' 12 reachouts', style: {} },
+      ],
+      hierarchy: { key: 'Base', val: 0 },
+      toggle: { isOpen: false },
+    });
+  });
+
+  it('can be appended as blocks instead of markdown', async () => {
+    const fetch = fakeFetch(200, {});
+    const block = datedLine(new Date(2026, 9, 5), 'x');
+    await appendBlocks({ fetch, token: 't', id: 'o', propertyId: JOB_SECTION_PROPERTY_IDS.interactions, blocks: [block] });
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ id: 'o', propertyId: JOB_SECTION_PROPERTY_IDS.interactions, blocks: [block] });
+  });
+});
+
+describe('updatePropertiesFromMarkdown', () => {
+  it('PATCHes the frontmatter to /object/markdown', async () => {
+    const fetch = fakeFetch(200, { id: 'obj-1' });
+    await updatePropertiesFromMarkdown({ fetch, token: 't', id: 'obj-1', markdown: '---\nstatus: "First Reachouts"\n---\n' });
+    const [url, init] = fetch.mock.calls[0];
+    expect(url).toBe('https://api.capacities.io/object/markdown');
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(init.body)).toEqual({ id: 'obj-1', markdown: '---\nstatus: "First Reachouts"\n---\n' });
+  });
+});
+
+describe('createWeblink', () => {
+  it('POSTs the url and title to /object/url, with notes that open on a link to the Job and a divider', async () => {
+    const fetch = fakeFetch(200, { id: 'web-1', structureId: 'MediaWebResource' });
+    await expect(
+      createWeblink({ fetch, token: 't', url: 'https://jobs.example.com/1', title: 'Acme: Engineer', linkTo: 'job-1' }),
+    ).resolves.toEqual({ id: 'web-1' });
+    const [url, init] = fetch.mock.calls[0];
+    expect(url).toBe('https://api.capacities.io/object/url');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({
+      url: 'https://jobs.example.com/1',
+      properties: { title: { type: 'title', title: { value: 'Acme: Engineer' } } },
+      blocks: { media_notes: [{ type: 'EntityBlock', entityId: 'job-1' }, { type: 'HorizontalLineBlock' }] },
+    });
+  });
+});
+
+describe('setJobPosition', () => {
+  it('PATCHes the Position to the posting link and, on the next line, a link to the Weblink', async () => {
+    const fetch = fakeFetch(200, { id: 'job-1' });
+    await setJobPosition({ fetch, token: 't', id: 'job-1', text: 'Engineer', url: 'https://x.com/1', weblinkId: 'web-1' });
+    const [url, init] = fetch.mock.calls[0];
+    expect(url).toBe('https://api.capacities.io/object');
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(init.body)).toEqual({
+      id: 'job-1',
+      properties: {
+        '17a5b4d2-76ee-4863-8576-7470e507707e': {
+          type: 'richText',
+          richText: {
+            value: [
+              { type: 'LinkToken', text: 'Engineer', url: 'https://x.com/1' },
+              { type: 'TextToken', text: '\n', style: {} },
+              { type: 'LinkToken', text: ' ', entityId: 'web-1' },
+            ],
+          },
+        },
+      },
+    });
   });
 });

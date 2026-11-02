@@ -13,15 +13,19 @@ export const JOB_SECTION_PROPERTY_IDS = {
   contacts: '3443806e-5617-44c6-8abe-318d386bb890',
   applicationReqs: '65449d5f-a685-469e-84d2-45ae94c6f742',
   jobDescription: '9f9dd203-d775-4e14-9d60-bcd7d002b5a1',
+  interactions: 'b71e44b4-c90e-4742-9ba8-16852104c21c',
 } as const;
 
 export type JobSection = keyof typeof JOB_SECTION_PROPERTY_IDS;
+
+/** The Job type's Position property (rich text): the posting's URL, and a link to its Weblink object. */
+export const JOB_POSITION_PROPERTY_ID = '17a5b4d2-76ee-4863-8576-7470e507707e';
 
 async function request(
   fetch: typeof globalThis.fetch,
   token: string,
   path: string,
-  init: { method: 'GET' | 'DELETE' } | { method: 'POST'; body: unknown },
+  init: { method: 'GET' | 'DELETE' } | { method: 'POST' | 'PATCH'; body: unknown },
 ): Promise<Response> {
   const res = await fetch(`${CAPACITIES_API}${path}`, {
     method: init.method,
@@ -61,6 +65,77 @@ export async function createObjectFromMarkdown({
   return { id };
 }
 
+/**
+ * `POST /object/url`: saves `url` as a Weblink object titled `title`, whose notes start with a link to the object
+ * `linkTo` and a divider, the way listings are linked to their Job by hand. Rate limit: 10/min.
+ */
+export async function createWeblink({
+  fetch,
+  token,
+  url,
+  title,
+  linkTo,
+}: {
+  fetch: typeof globalThis.fetch;
+  token: string;
+  url: string;
+  title: string;
+  linkTo: string;
+}): Promise<{ id: string }> {
+  const res = await post(fetch, token, '/object/url', {
+    url,
+    properties: { title: { type: 'title', title: { value: title } } },
+    blocks: { media_notes: [{ type: 'EntityBlock', entityId: linkTo }, { type: 'HorizontalLineBlock' }] },
+  });
+  const { id } = (await res.json()) as { id: string };
+  return { id };
+}
+
+/**
+ * `PATCH /object`: sets a Job's Position to a link to the posting, and below it a link to the posting's Weblink object.
+ * (Frontmatter can only link objects by title, which isn't unique.) Rate limit: 30/min.
+ */
+export async function setJobPosition({
+  fetch,
+  token,
+  id,
+  text,
+  url,
+  weblinkId,
+}: {
+  fetch: typeof globalThis.fetch;
+  token: string;
+  id: string;
+  text: string;
+  url: string;
+  weblinkId: string;
+}): Promise<void> {
+  const value = [
+    { type: 'LinkToken', text, url },
+    { type: 'TextToken', text: '\n', style: {} },
+    { type: 'LinkToken', text: ' ', entityId: weblinkId },
+  ];
+  await request(fetch, token, '/object', {
+    method: 'PATCH',
+    body: { id, properties: { [JOB_POSITION_PROPERTY_ID]: { type: 'richText', richText: { value } } } },
+  });
+}
+
+/** `PATCH /object/markdown`: sets the properties in the frontmatter; the body is ignored. Rate limit: 30/min. */
+export async function updatePropertiesFromMarkdown({
+  fetch,
+  token,
+  id,
+  markdown,
+}: {
+  fetch: typeof globalThis.fetch;
+  token: string;
+  id: string;
+  markdown: string;
+}): Promise<void> {
+  await request(fetch, token, '/object/markdown', { method: 'PATCH', body: { id, markdown } });
+}
+
 interface ApiBlock {
   id: string;
   type: string;
@@ -68,22 +143,53 @@ interface ApiBlock {
   blocks?: unknown[];
 }
 
-/** `POST /blocks/append`: adds markdown as blocks to one block-content property (section) of an existing object. Returns
+/** What to append: markdown, or blocks for what markdown can't say (like a date link). */
+export type AppendContent = { markdown: string } | { blocks: WritableBlock[] };
+
+/** The part of the API's writable TextBlock we use. */
+export interface WritableBlock {
+  type: 'TextBlock';
+  tokens: (
+    | { type: 'TextToken'; text: string; style: Record<string, boolean> }
+    | { type: 'LinkToken'; text: string; date: { dateResolution: 'day'; start: string; end: null } }
+  )[];
+  hierarchy: { key: 'Base'; val: number };
+  toggle?: { isOpen: boolean } | null;
+}
+
+/**
+ * A line starting with a link to `date`'s day page, the way a Job's Interactions are written by hand: a closed toggle
+ * (which Capacities shows as "- " in markdown), `[[Date/2026-10-15]] 12 reachouts`.
+ */
+export function datedLine(date: Date, text: string): WritableBlock {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const day = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  return {
+    type: 'TextBlock',
+    tokens: [
+      { type: 'LinkToken', text: ' ', date: { dateResolution: 'day', start: `${day}T00:00:00.000Z`, end: null } },
+      { type: 'TextToken', text: ` ${text}`, style: {} },
+    ],
+    hierarchy: { key: 'Base', val: 0 },
+    toggle: { isOpen: false },
+  };
+}
+
+/** `POST /blocks/append`: adds markdown or blocks to one block-content property (section) of an existing object. Returns
  * that section's blocks afterwards. */
 export async function appendBlocks({
   fetch,
   token,
   id,
   propertyId,
-  markdown,
+  ...content
 }: {
   fetch: typeof globalThis.fetch;
   token: string;
   id: string;
   propertyId: string;
-  markdown: string;
-}): Promise<ApiBlock[]> {
-  const res = await post(fetch, token, '/blocks/append', { id, propertyId, markdown });
+} & AppendContent): Promise<ApiBlock[]> {
+  const res = await post(fetch, token, '/blocks/append', { id, propertyId, ...content });
   const body = (await res.json().catch(() => ({}))) as { blocks?: Record<string, ApiBlock[]> };
   return body.blocks?.[propertyId] ?? [];
 }
@@ -104,15 +210,14 @@ export async function appendToSection({
   token,
   id,
   propertyId,
-  markdown,
+  ...content
 }: {
   fetch: typeof globalThis.fetch;
   token: string;
   id: string;
   propertyId: string;
-  markdown: string;
-}): Promise<void> {
-  const blocks = await appendBlocks({ fetch, token, id, propertyId, markdown });
+} & AppendContent): Promise<void> {
+  const blocks = await appendBlocks({ fetch, token, id, propertyId, ...content });
   const firstContent = blocks.findIndex((b) => !isEmptyParagraph(b));
   for (const blank of firstContent > 0 ? blocks.slice(0, firstContent) : []) {
     const query = `objectId=${encodeURIComponent(id)}&blockId=${encodeURIComponent(blank.id)}`;

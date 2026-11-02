@@ -14,6 +14,10 @@ export interface SaveDeps {
   extract: (page: PageForExtraction) => Promise<JobFields>;
   create: (markdown: string) => Promise<{ id: string }>;
   appendSection: (objectId: string, section: JobSection, markdown: string) => Promise<void>;
+  /** Saves the posting as a Weblink object that links back to the Job `jobId`. */
+  createWeblink: (listing: { url: string; title: string; jobId: string }) => Promise<{ id: string }>;
+  /** Sets the Job's Position to the posting's link plus a link to its Weblink object. */
+  setPosition: (jobId: string, position: { text: string; url: string; weblinkId: string }) => Promise<void>;
 }
 
 /** Less than this and the tab is probably still loading, a login wall, or not a posting. */
@@ -22,8 +26,12 @@ const MIN_PAGE_CHARS = 100;
 const SECTION_LABELS: Record<JobSection, string> = {
   contacts: '1st & 2nd Degree Contacts',
   applicationReqs: 'Application Reqs',
+  interactions: 'Interactions',
   jobDescription: 'Job Description',
 };
+
+/** "Close: Senior Frontend Engineer – Marketing", the way listings are titled by hand. */
+const weblinkTitle = (company: string, fullTitle: string) => (company.trim() ? `${company.trim()}: ${fullTitle}` : fullTitle);
 
 /** A title with no letters ("-" from an empty company and role) isn't one. */
 const usableTitle = (t: string) => (/\p{L}/u.test(t) ? t.trim() : null);
@@ -61,6 +69,13 @@ export async function saveJob(capture: PageCapture | null, deps: SaveDeps): Prom
         const reason = err instanceof Error ? err.message : String(err);
         return { status: 'error', message: `Job created, but its ${SECTION_LABELS[section]} couldn't be saved: ${reason}` };
       }
+    }
+    try {
+      const weblink = await deps.createWeblink({ url, title: weblinkTitle(fields.company, fields.fullTitle), jobId: id });
+      await deps.setPosition(id, { text: fields.fullTitle, url, weblinkId: weblink.id });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      return { status: 'error', message: `Job created, but the listing's Weblink couldn't be saved: ${reason}` };
     }
     return { status: 'saved', title: doc.title, company: fields.company, objectId: id };
   } catch (err) {

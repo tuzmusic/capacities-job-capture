@@ -2,6 +2,7 @@ import { Readability } from '@mozilla/readability';
 import TurndownService from 'turndown';
 import { findApplyButton, findApplyUrl } from './applyLink.ts';
 import { readApplicationForm, type ApplicationForm } from './formFields.ts';
+import { countJobLinks } from './listingCheck.ts';
 import { filterSections } from './sectionFilter.ts';
 
 /** What one frame of the tab yields. Runs inside the page (injected), so it must only use DOM APIs. */
@@ -18,6 +19,8 @@ export interface PageCapture {
   applyUrl: string | null;
   /** No form and no apply link, but an "Apply" button that may reveal the form in place. */
   applyButton: boolean;
+  /** Links to what look like other individual postings: many of them means this is a list of jobs. */
+  jobLinks: number;
 }
 
 /** Below this, Readability probably grabbed a fragment rather than the posting. */
@@ -60,5 +63,6 @@ export function capturePage(doc: Document, url: string): PageCapture {
     applicationForm,
     applyUrl,
     applyButton: !applicationForm.found && !applyUrl && findApplyButton(doc, url) !== null,
+    jobLinks: countJobLinks(doc, url),
   };
 }

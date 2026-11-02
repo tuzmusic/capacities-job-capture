@@ -1,5 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { appendToSection, createObjectFromMarkdown, JOB_SECTION_PROPERTY_IDS } from '../shared/capacities.ts';
+import {
+  appendToSection,
+  createObjectFromMarkdown,
+  createWeblink,
+  JOB_SECTION_PROPERTY_IDS,
+  setJobPosition,
+} from '../shared/capacities.ts';
 import type { OverlayState } from '../shared/overlay.ts';
 import { recordSavedJob } from '../shared/savedJobs.ts';
 import { loadSettings } from '../shared/settings.ts';
@@ -7,6 +13,7 @@ import { show, sleep, waitForLoad } from '../shared/tabs.ts';
 import captureScript from './content/capture.ts?script&iife';
 import { extractFields } from './lib/extractFields.ts';
 import { findApplicationForm } from './lib/findApplicationForm.ts';
+import { notAJobListing } from './lib/listingCheck.ts';
 import type { PageCapture } from './lib/pageCapture.ts';
 import { pickBestCapture } from './lib/pickBestCapture.ts';
 import { saveJob, type SaveResult } from './lib/saveJob.ts';
@@ -79,8 +86,10 @@ async function captureInBackgroundTab(
   }
 }
 
-/** Menu item: saves the job posting in `tab` as a Capacities Job. */
-export async function saveJobListing(tab: chrome.tabs.Tab) {
+const SAVE_ANYWAY_MESSAGE = 'save-job-anyway';
+
+/** Menu item: saves the job posting in `tab` as a Capacities Job. With `force`, even if it doesn't look like one. */
+export async function saveJobListing(tab: chrome.tabs.Tab, { force = false } = {}) {
   const tabId = tab.id;
   if (tabId === undefined) return;
 
@@ -95,6 +104,15 @@ export async function saveJobListing(tab: chrome.tabs.Tab) {
     const capture = await captureTab(tabId);
     // Link the posting as you see it in the address bar, even if the content came from an embedded frame.
     const withTabUrl = capture && tab.url ? { ...capture, url: tab.url } : capture;
+    const notListing = !force && withTabUrl ? notAJobListing(withTabUrl) : null;
+    if (notListing) {
+      return show(tabId, {
+        tone: 'warning',
+        heading: 'Not a job posting?',
+        detail: notListing,
+        actions: [{ label: 'Try anyway', message: { type: SAVE_ANYWAY_MESSAGE } }],
+      });
+    }
     const anthropic = new Anthropic({ apiKey: anthropicApiKey, dangerouslyAllowBrowser: true });
     result = await saveJob(withTabUrl, {
       findForm: (c) => findApplicationForm(c, { fetch, capturePage: (url, opts) => captureInBackgroundTab(url, tab, opts) }),
@@ -102,6 +120,9 @@ export async function saveJobListing(tab: chrome.tabs.Tab) {
       create: (markdown) => createObjectFromMarkdown({ fetch, token: capacitiesApiToken, markdown }),
       appendSection: (id, section, markdown) =>
         appendToSection({ fetch, token: capacitiesApiToken, id, propertyId: JOB_SECTION_PROPERTY_IDS[section], markdown }),
+      createWeblink: ({ url, title, jobId }) =>
+        createWeblink({ fetch, token: capacitiesApiToken, url, title, linkTo: jobId }),
+      setPosition: (id, position) => setJobPosition({ fetch, token: capacitiesApiToken, id, ...position }),
     });
   } catch (err) {
     result = { status: 'error', message: err instanceof Error ? err.message : String(err) };
@@ -114,4 +135,11 @@ export async function saveJobListing(tab: chrome.tabs.Tab) {
     );
   }
   await show(tabId, resultOverlay(result));
+}
+
+/** Overlay click: "Try anyway" on a page that didn't look like a posting. Returns whether the message was ours. */
+export function onJobListingMessage(message: unknown, sender: chrome.runtime.MessageSender): boolean {
+  if ((message as { type?: unknown } | null)?.type !== SAVE_ANYWAY_MESSAGE || !sender.tab) return false;
+  void saveJobListing(sender.tab, { force: true });
+  return true;
 }

@@ -55,6 +55,8 @@ also get its own shortcut in `chrome://extensions/shortcuts`.
   opened in a background tab, captured, and closed. With no link, an in-page "Apply" button (modal, tab, client-side
   route) is clicked in a background copy of the posting instead, so your tab is left alone. Workday, iCIMS, Taleo and the like aren't opened (login walls,
   multi-step forms). When the form still can't be read, Haiku adds a short reason, like "(Workday)" or "(needs login)".
+- **Listing Weblink:** the posting is also saved as a Weblink object ("Company: Full posting title") whose notes open
+  with a link to the Job, and the Job's Position links to both the posting URL and that Weblink.
 - **easy-apply** tag is added when there's no required cover letter and no questions at all (an optional cover letter
   doesn't count, optional questions do). Only when the application form was found; otherwise Application Reqs says to check.
 - Filled sections start with their content: the empty lines at the top of a section (the Job template puts one in each)
@@ -198,7 +200,7 @@ storage) as arguments. `run.ts` is thin Chrome wiring on top.
 
 | Module | Does |
 |---|---|
-| `capacities.ts` | `POST /object/markdown`, `POST /blocks/append` (by section property id), `POST /objects/search` |
+| `capacities.ts` | `POST /object/markdown`, `POST /object/url` (Weblinks), `PATCH /object`, `POST /blocks/append` (by section property id), `POST /objects/search` |
 | `overlay.ts` | The in-page status dialog, with optional buttons (self-contained, injected with `executeScript`) |
 | `savedJobs.ts` | Jobs this extension saved, so other tasks can find them by company |
 | `settings.ts` | API keys from `chrome.storage.local` |

@@ -88,6 +88,7 @@ describe('pickBestCapture', () => {
     applicationForm: { found: false, fields: [] },
     applyUrl: null,
     applyButton: false,
+    jobLinks: 0,
   });
 
   it('picks the frame with the most text (e.g. an embedded ATS iframe over a thin careers shell)', () => {

@@ -11,6 +11,7 @@ const capture: PageCapture = {
   applicationForm: { found: true, fields: [{ kind: 'long text', label: 'Why RevenueCat?', required: true }] },
   applyUrl: null,
   applyButton: false,
+  jobLinks: 0,
 };
 
 const fields: JobFields = {
@@ -26,13 +27,22 @@ const fields: JobFields = {
 const noForm = { found: false, fields: [] };
 
 function deps(
-  overrides: { findForm?: Mock; extract?: Mock; create?: Mock; appendSection?: Mock } = {},
+  overrides: {
+    findForm?: Mock;
+    extract?: Mock;
+    create?: Mock;
+    appendSection?: Mock;
+    createWeblink?: Mock;
+    setPosition?: Mock;
+  } = {},
 ) {
   return {
     findForm: vi.fn().mockResolvedValue({ form: noForm, missedApplyPage: null }),
     extract: vi.fn().mockResolvedValue(fields),
     create: vi.fn().mockResolvedValue({ id: 'obj-9' }),
     appendSection: vi.fn().mockResolvedValue(undefined),
+    createWeblink: vi.fn().mockResolvedValue({ id: 'web-3' }),
+    setPosition: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -182,6 +192,44 @@ describe('saveJob', () => {
         status: 'error',
         message: "Job created, but its Application Reqs couldn't be saved: Capacities error 400: bad",
       });
+    });
+  });
+
+  describe('listing weblink', () => {
+    it('saves the posting as a Weblink linking back to the Job, titled with the company', async () => {
+      const d = deps();
+      await saveJob(capture, d);
+      expect(d.createWeblink).toHaveBeenCalledWith({
+        url: capture.url,
+        title: 'RevenueCat: Senior Software Engineer, Product',
+        jobId: 'obj-9',
+      });
+    });
+
+    it('titles it with just the posting title when there is no company', async () => {
+      const d = deps({ extract: vi.fn().mockResolvedValue({ ...fields, company: '' }) });
+      await saveJob(capture, d);
+      expect(d.createWeblink.mock.calls[0][0].title).toBe('Senior Software Engineer, Product');
+    });
+
+    it('links the Weblink from the Position, after the Job exists', async () => {
+      const d = deps();
+      await saveJob(capture, d);
+      expect(d.setPosition).toHaveBeenCalledWith('obj-9', {
+        text: 'Senior Software Engineer, Product',
+        url: capture.url,
+        weblinkId: 'web-3',
+      });
+      expect(d.create.mock.invocationCallOrder[0]).toBeLessThan(d.createWeblink.mock.invocationCallOrder[0]);
+    });
+
+    it('says the Job exists when the Weblink fails', async () => {
+      const d = deps({ createWeblink: vi.fn().mockRejectedValue(new Error('Capacities rate limit hit.')) });
+      await expect(saveJob(capture, d)).resolves.toEqual({
+        status: 'error',
+        message: "Job created, but the listing's Weblink couldn't be saved: Capacities rate limit hit.",
+      });
+      expect(d.setPosition).not.toHaveBeenCalled();
     });
   });
 });
