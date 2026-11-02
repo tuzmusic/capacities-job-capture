@@ -1,12 +1,12 @@
-/** The menu entry. Kept apart from ./run.ts so the popup doesn't bundle the task itself. */
-export const task = {
-  id: 'scroll-page-and-get-mutuals',
-  label: 'Scroll Page & Get Mutuals',
-  hint: "LinkedIn company page → Engineering people → mutuals into the Job's contacts",
+/** The menu entries. Kept apart from ./run.ts so the popup doesn't bundle the task itself. */
+export const peoplePageTask = {
+  id: 'get-mutuals',
+  label: 'Get Mutuals from People Page',
+  hint: "LinkedIn company → its Engineering people page (about 75 shown) → mutuals into the Job's contacts",
 } as const;
 
-export const getMutualsTask = {
-  id: 'get-mutuals',
-  label: 'Get Mutuals',
-  hint: "LinkedIn people page as it is now (no scrolling) → mutuals into the Job's contacts",
+export const searchTask = {
+  id: 'get-mutuals-with-search',
+  label: 'Get Mutuals with Search',
+  hint: 'The same, plus people search for the company’s engineers in your network (up to 100 more, in a background tab)',
 } as const;

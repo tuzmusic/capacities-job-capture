@@ -20,13 +20,13 @@ block out an evening.
 1. **Save Job Listing to Capacities.** Captures the posting in your current tab (including logged-in and embedded ATS
    pages), finds the application form even when it's on a separate page, and writes a Job with salary, application
    requirements, and a clean copy of the description.
-2. **Scroll Page & Get Mutuals.** On a LinkedIn company page, loads the full Engineering people list and writes your 1st-
-   and 2nd-degree connections into that company's Job, grouped by who can introduce you.
-   **Get Mutuals** does the same with only the people the page already shows, no scrolling or clicking (LinkedIn's
-   Nov 2026 people page has no "Show more" and stops at about 75 people).
-3. **Copy Reachouts.** Turns the LinkedIn profiles open in the current window into rows for your contacts
+2. **Get Mutuals from People Page.** On a LinkedIn company page, reads its Engineering people page and writes your
+   1st- and 2nd-degree connections into that company's Job, grouped by who can introduce you.
+3. **Get Mutuals with Search.** The same, plus LinkedIn people search for the company's engineers in your network,
+   which finds people the people page leaves out and names mutuals in full.
+4. **Copy Reachouts.** Turns the LinkedIn profiles open in the current window into rows for your contacts
    spreadsheet, with linked names, ready to paste.
-4. **Add Reachouts to Sheet.** The same rows, written straight into the sheet through a small Apps Script web app
+5. **Add Reachouts to Sheet.** The same rows, written straight into the sheet through a small Apps Script web app
    (once it's set up).
 
 Click the toolbar icon (or press **Alt+Shift+J**) for the menu, then click an item or press its number. Each item can
@@ -71,13 +71,19 @@ also get its own shortcut in `chrome://extensions/shortcuts`.
 - The result shows as a dialog in the page's top-right corner. It doesn't take focus and stays until you dismiss it.
   The toolbar icon badge also shows … / ✓ / ✗.
 
-## Scroll Page & Get Mutuals
+## Get Mutuals
 
 - **Where:** any `linkedin.com/company/…` page. It goes to `{company}/people/?facetCurrentFunction=8` (Engineering),
-  or stays put if you're already there. Anywhere else it just says so.
-- **Loading everyone:** clicks "Show more results" every 2s, like the old bookmarklet. When the list stops growing it
-  waits and tries again (3 tries), then reloads the page and starts over (2 reloads). People seen in every attempt are
-  kept, so a reload doesn't lose anyone. If it never gets to the end, the note says the list may be incomplete.
+  or stays put if you're already there, and leaves you there, for opening profiles. Anywhere else it just says so.
+- **From People Page:** reads the people the page shows. Since LinkedIn's Nov 2026 redesign that's about 75, ranked
+  (your connections mostly near the top), with no "Show more", and 2nd-degree cards often name a mutual by first name
+  only, or not at all.
+- **With Search:** also pages through LinkedIn people search in a background tab next to yours (closed when done):
+  your 1st and 2nd degree, at the company by its LinkedIn id (read from the people page's links, so "Weave" means
+  the company, not every profile with the word in it), with the keyword "engineer", since search has no job function
+  filter. Search shows at most 10 pages of 10. People are merged by profile; search's full mutual names win, and a
+  first-name-only mutual from the people page gets the full name when only one fits. In testing, Grafana's 21 known
+  contacts on the people page went to 30 with search, and Weave's 27 2nd-degree to 41.
 - **What's written:** appended to the Job's *1st & 2nd Degree Contacts* section, as bullets (no headings). 2nd-degree
   people are grouped under each mutual connection (biggest group first), so someone with two mutuals is listed under
   both. With only 2nd-degree people, the mutuals are the top bullets:
@@ -189,9 +195,9 @@ storage) as arguments. `run.ts` is thin Chrome wiring on top.
 
 | Module | Does |
 |---|---|
-| `linkedinUrl.ts` | Company page URL → its Engineering people URL (or "not a company page") |
-| `peoplePage.ts` | Reads the people cards, clicks "Show more results" (runs inside the page) |
-| `loadAllPeople.ts` | The click / retry / reload loop |
+| `linkedinUrl.ts` | Company page URL → its Engineering people URL (or "not a company page"); the people search URL |
+| `peoplePage.ts` | Reads the people cards on the people page or search results, and the company id (runs inside the page) |
+| `mergePeople.ts` | People page + search results → one list, with full mutual names |
 | `mutualsMarkdown.ts` | People → the contacts markdown |
 | `findJobNotes.ts` | Which Job notes belong to the company |
 

@@ -1,6 +1,6 @@
 /**
- * Reads a LinkedIn company "People" page (runs inside the page). LinkedIn's markup changes, so each lookup has a
- * known class name first and a looser fallback.
+ * Reads a LinkedIn company "People" page, or a people search results page (runs inside the page). LinkedIn's markup
+ * changes, so each lookup has a known class name first and a looser fallback.
  */
 
 export type Degree = '1' | '2' | '3+';
@@ -17,7 +17,6 @@ export interface Person {
 }
 
 const PROFILE_LINK = 'a[href*="/in/"]';
-const LOAD_MORE_BUTTON = 'button.scaffold-finite-scroll__load-button';
 
 const collapse = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
 
@@ -37,31 +36,6 @@ export function findPeopleCards(doc: Document): Element[] {
 
 const DEGREE_MARK = /[·•]\s*\d(?:st|nd|rd|th)/; // no \b: textContent runs "2nd" into the headline
 
-export function findLoadMoreButton(doc: Document): HTMLButtonElement | null {
-  return (
-    doc.querySelector<HTMLButtonElement>(LOAD_MORE_BUTTON) ??
-    [...doc.querySelectorAll<HTMLButtonElement>('main button, button')].find((b) =>
-      /^show more results$/i.test(collapse(b.textContent)),
-    ) ??
-    null
-  );
-}
-
-/**
- * Scrolls to the bottom (some lists load on scroll) and clicks "Show more results" once, if it's there.
- * `clicked` is false when there's no button to click (or it's disabled): either everything's loaded, or a batch is
- * still loading.
- */
-export function clickLoadMore(doc: Document): { cards: number; clicked: boolean } {
-  doc.defaultView?.scrollTo(0, doc.documentElement.scrollHeight);
-  const button = findLoadMoreButton(doc);
-  const cards = findPeopleCards(doc).length;
-  if (!button || button.disabled) return { cards, clicked: false };
-  button.scrollIntoView?.({ block: 'center' });
-  button.dispatchEvent(new MouseEvent('click', { view: doc.defaultView, bubbles: true, cancelable: true }));
-  return { cards, clicked: true };
-}
-
 /** The company name from the page header, else the page title, else '' (the caller falls back to the URL). */
 export function readCompanyName(doc: Document): string {
   const heading = collapse(doc.querySelector('.org-top-card-summary__title, .org-top-card h1, main h1')?.textContent);
@@ -73,6 +47,18 @@ export function readCompanyName(doc: Document): string {
     .map(collapse)
     .filter((p) => p && !/^(linkedin|people)$/i.test(p));
   return parts[0]?.replace(/:\s*(people|overview|about)$/i, '') ?? '';
+}
+
+/**
+ * LinkedIn's numeric id for the company, from the people page's links into people search ("See all employees",
+ * "Tristan & 1 other connection work here"), which filter by it. Null when the page has no such link.
+ */
+export function readCompanyId(doc: Document): string | null {
+  for (const a of doc.querySelectorAll<HTMLAnchorElement>('a[href*="/search/results/people"]')) {
+    const id = decodeURIComponent(a.href).match(/[?&]currentCompany=\D*(\d+)/)?.[1];
+    if (id) return id;
+  }
+  return null;
 }
 
 /** Text runs in document order: roughly the card's lines (name, "· 2nd", headline, mutuals, button). */
@@ -96,6 +82,8 @@ function deepestMatching(el: Element, pattern: RegExp): string {
 const DEGREE_RUN = /^(?:[·•]\s*)?\d(?:st|nd|rd|th)\+?(?:\s*degree.*)?$|degree connection/i;
 const MUTUAL = /mutual connection/i;
 const BUTTON_RUN = /^(connect|follow|message|pending|view .*profile|status is .*)$/i;
+/** The photo badge's text on search results: "Jane Doe is open to work". */
+const BADGE_RUN = /\bopen to work$|\bis hiring$/i;
 
 export function readDegree(text: string): Degree {
   const d =
@@ -105,16 +93,17 @@ export function readDegree(text: string): Degree {
 
 /**
  * "Jane Doe is a mutual connection" → ["Jane Doe"]; "Jane Doe, John Roe and 5 other mutual connections" → both names.
+ * Search results write "&" for "and": "Jane Doe & John Roe are mutual connections".
  * The line can start with other card text, like "808 followers • ", which is dropped.
  */
 export function parseMutuals(line: string): string[] {
   const s = collapse(line).replace(/^.*[•·]\s*/, '');
   const names =
     s.match(/^(.+?)\s+(?:is|are)\s+(?:an?\s+)?mutual connections?\b/i)?.[1] ??
-    s.match(/^(.*?)(?:,?\s*(?:and\s+)?)\d+\s+others?\s+mutual connections?\b/i)?.[1] ??
+    s.match(/^(.*?)(?:,?\s*(?:(?:and|&)\s+)?)\d+\s+others?\s+mutual connections?\b/i)?.[1] ??
     '';
   return names
-    .split(/\s*,\s*(?:and\s+)?|\s+and\s+/)
+    .split(/\s*,\s*(?:(?:and|&)\s+)?|\s+(?:and|&)\s+/)
     .map((n) => n.trim())
     .filter(Boolean);
 }
@@ -146,13 +135,15 @@ export function readPerson(card: Element, company: string): Person | null {
   const runs = textRuns(card);
   const name =
     collapse(card.querySelector('.artdeco-entity-lockup__title')?.textContent) ||
-    runs.find((r) => !DEGREE_RUN.test(r) && !BUTTON_RUN.test(r)) ||
+    runs.find((r) => !DEGREE_RUN.test(r) && !BUTTON_RUN.test(r) && !BADGE_RUN.test(r)) ||
     '';
   if (!name) return null;
 
   const headline =
     collapse(card.querySelector('.artdeco-entity-lockup__subtitle')?.textContent) ||
-    runs.find((r) => r !== name && !DEGREE_RUN.test(r) && !MUTUAL.test(r) && !BUTTON_RUN.test(r)) ||
+    runs.find(
+      (r) => r !== name && !DEGREE_RUN.test(r) && !MUTUAL.test(r) && !BUTTON_RUN.test(r) && !BADGE_RUN.test(r),
+    ) ||
     '';
   const mutualLine = deepestMatching(card, MUTUAL);
 

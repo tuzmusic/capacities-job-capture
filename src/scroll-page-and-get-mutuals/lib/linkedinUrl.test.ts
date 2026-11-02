@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { engineeringPeopleTarget, slugToName } from './linkedinUrl.ts';
+import { engineeringPeopleTarget, peopleSearchUrl, slugToName } from './linkedinUrl.ts';
 
 const ENG = 'https://www.linkedin.com/company/grafana-labs/people/?facetCurrentFunction=8';
 
@@ -38,5 +38,16 @@ describe('engineeringPeopleTarget', () => {
 describe('slugToName', () => {
   it('title-cases the slug', () => {
     expect(slugToName('grafana-labs')).toBe('Grafana Labs');
+  });
+});
+
+describe('peopleSearchUrl', () => {
+  it('searches your 1st and 2nd degree at the company id for engineers, by page', () => {
+    const url = new URL(peopleSearchUrl('11062162', 3));
+    expect(url.origin + url.pathname).toBe('https://www.linkedin.com/search/results/people/');
+    expect(url.searchParams.get('currentCompany')).toBe('["11062162"]');
+    expect(url.searchParams.get('network')).toBe('["F","S"]');
+    expect(url.searchParams.get('keywords')).toBe('engineer');
+    expect(url.searchParams.get('page')).toBe('3');
   });
 });

@@ -1,9 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
   cleanTitle,
-  clickLoadMore,
-  findLoadMoreButton,
   parseMutuals,
+  readCompanyId,
   readCompanyName,
   readDegree,
   scrapePeople,
@@ -39,13 +38,12 @@ const card = ({ name, slug, degree, headline, mutual }: Record<string, string>) 
     </section>
   </li>`;
 
-function page(cards: string[], { button = true } = {}) {
+function page(cards: string[]) {
   document.title = 'Grafana Labs: People | LinkedIn';
   document.body.innerHTML = `
     <main>
       <div class="org-top-card"><h1 class="org-top-card-summary__title"> Grafana Labs </h1></div>
       <ul>${cards.join('')}</ul>
-      ${button ? '<button class="scaffold-finite-scroll__load-button"><span>Show more results</span></button>' : ''}
     </main>`;
 }
 
@@ -124,33 +122,6 @@ describe('scrapePeople', () => {
   });
 });
 
-describe('load more', () => {
-  it('finds the button by class or by its text', () => {
-    page([jane]);
-    expect(findLoadMoreButton(document)).not.toBeNull();
-    document.body.innerHTML = '<main><button> Show more results </button></main>';
-    expect(findLoadMoreButton(document)).not.toBeNull();
-    document.body.innerHTML = '<main><button>Connect</button></main>';
-    expect(findLoadMoreButton(document)).toBeNull();
-  });
-
-  it('clicks it and reports how many cards there are', () => {
-    page([jane, sam]);
-    const onClick = vi.fn();
-    findLoadMoreButton(document)!.addEventListener('click', onClick);
-    expect(clickLoadMore(document)).toEqual({ cards: 2, clicked: true });
-    expect(onClick).toHaveBeenCalledOnce();
-  });
-
-  it('reports no click when the button is gone or disabled', () => {
-    page([jane], { button: false });
-    expect(clickLoadMore(document)).toEqual({ cards: 1, clicked: false });
-    page([jane]);
-    findLoadMoreButton(document)!.disabled = true;
-    expect(clickLoadMore(document)).toEqual({ cards: 1, clicked: false });
-  });
-});
-
 describe('readCompanyName', () => {
   it('reads the header', () => {
     page([]);
@@ -166,6 +137,41 @@ describe('readCompanyName', () => {
   });
 });
 
+describe('search results', () => {
+  it('skips the "open to work" badge when reading the headline', () => {
+    document.body.innerHTML = `<main><div role="list"><div>
+      <a href="https://www.linkedin.com/in/arunika/"><img alt=""><span>Arunika Yadav</span><span>is open to work</span></a>
+      <a href="https://www.linkedin.com/in/arunika/">Arunika Yadav</a><span>• 2nd</span>
+      <p>Senior Software Engineer at Weave</p><p>India</p><button>Connect</button>
+      <p>Mitesh Kumar &amp; Pat Smith are mutual connections</p>
+    </div></div></main>`;
+    expect(scrapePeople(document, 'Weave')).toEqual([
+      {
+        name: 'Arunika Yadav',
+        title: 'Senior Software Engineer',
+        url: 'https://www.linkedin.com/in/arunika/',
+        degree: '2',
+        mutuals: ['Mitesh Kumar', 'Pat Smith'],
+      },
+    ]);
+  });
+});
+
+describe('readCompanyId', () => {
+  it('reads it from a link into people search', () => {
+    document.body.innerHTML = `<main>
+      <a href="https://www.linkedin.com/company/grafana-labs/about/">About</a>
+      <a href="https://www.linkedin.com/search/results/people/?currentCompany=%5B%2211062162%22%5D&origin=COMPANY_PAGE">1K-5K employees</a>
+    </main>`;
+    expect(readCompanyId(document)).toBe('11062162');
+  });
+
+  it('is null without one', () => {
+    document.body.innerHTML = '<main><a href="https://www.linkedin.com/search/results/people/?keywords=x">x</a></main>';
+    expect(readCompanyId(document)).toBeNull();
+  });
+});
+
 describe('parsing helpers', () => {
   it('parses the mutual line', () => {
     expect(parseMutuals('Pat Smith is a mutual connection')).toEqual(['Pat Smith']);
@@ -173,6 +179,8 @@ describe('parsing helpers', () => {
     expect(parseMutuals('Pat Smith, Lou Reed and 5 other mutual connections')).toEqual(['Pat Smith', 'Lou Reed']);
     expect(parseMutuals('Pat Smith, Lou Reed, and 5 other mutual connections')).toEqual(['Pat Smith', 'Lou Reed']);
     expect(parseMutuals('Pat Smith and 1 other mutual connection')).toEqual(['Pat Smith']);
+    expect(parseMutuals('Pat Smith & Lou Reed are mutual connections')).toEqual(['Pat Smith', 'Lou Reed']);
+    expect(parseMutuals('Pat Smith, Lou Reed & 4 other mutual connections')).toEqual(['Pat Smith', 'Lou Reed']);
     expect(parseMutuals('12 mutual connections')).toEqual([]);
   });
 

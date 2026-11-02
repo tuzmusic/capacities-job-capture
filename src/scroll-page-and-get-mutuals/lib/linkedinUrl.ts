@@ -38,3 +38,21 @@ export function slugToName(slug: string): string {
     .map((w) => w[0].toUpperCase() + w.slice(1))
     .join(' ');
 }
+
+/** LinkedIn shows at most this many pages of people search results (10 people each). */
+export const SEARCH_MAX_PAGES = 10;
+
+/**
+ * Your 1st- and 2nd-degree connections who work at the company, by its id rather than its name, so "Weave" finds the
+ * company and not every profile that mentions the word. Search has no job function filter; the "engineer" keyword
+ * ranks engineers into the 100 results it shows.
+ */
+export function peopleSearchUrl(companyId: string, page: number): string {
+  const params = new URLSearchParams({
+    currentCompany: JSON.stringify([companyId]),
+    network: JSON.stringify(['F', 'S']),
+    keywords: 'engineer',
+    page: String(page),
+  });
+  return `https://www.linkedin.com/search/results/people/?${params}`;
+}

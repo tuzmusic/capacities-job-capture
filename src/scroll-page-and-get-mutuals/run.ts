@@ -5,17 +5,17 @@ import { loadSettings } from '../shared/settings.ts';
 import { show, sleep, waitForLoad } from '../shared/tabs.ts';
 import peopleScript from './content/people.ts?script&iife';
 import { findJobNotes, type JobNote } from './lib/findJobNotes.ts';
-import { engineeringPeopleTarget, slugToName } from './lib/linkedinUrl.ts';
-import { DEFAULT_LOAD_OPTIONS, loadAllPeople } from './lib/loadAllPeople.ts';
+import { engineeringPeopleTarget, peopleSearchUrl, SEARCH_MAX_PAGES, slugToName } from './lib/linkedinUrl.ts';
+import { mergePeople } from './lib/mergePeople.ts';
 import { buildMutualsMarkdown, contactsAlreadyIn, NO_CONTACTS } from './lib/mutualsMarkdown.ts';
 import type { Person } from './lib/peoplePage.ts';
 
 /** What content/people.ts exposes in the page. */
 interface PageApi {
   count: () => number;
-  clickMore: () => { cards: number; clicked: boolean };
   scrape: (company: string) => Person[];
   companyName: () => string;
+  companyId: () => string | null;
 }
 
 /** Calls the page reader in the tab's top frame, injecting it first if this page doesn't have it yet. */
@@ -63,28 +63,60 @@ interface Pending {
 const pendingKey = (tabId: number) => `mutuals:pending:${tabId}`;
 
 export const PICK_MESSAGE = 'scroll-page-and-get-mutuals:pick';
-export const STOP_MESSAGE = 'scroll-page-and-get-mutuals:stop';
 
 const running = new Set<number>();
-/** Tabs whose loading you cut short from the overlay. */
-const stopRequested = new Set<number>();
-/** Fewer than this isn't worth cutting short, so the button waits until then. */
-const STOP_AFTER_PEOPLE = 50;
-const stopAction: OverlayAction = { label: "Okay, that's enough", message: { type: STOP_MESSAGE } };
 
-/** Menu item: on a LinkedIn company page, loads its Engineering people and adds your mutuals to the company's Job. */
-export const scrollPageAndGetMutuals = (tab: chrome.tabs.Tab) => getMutualsFrom(tab, { scroll: true });
+/** Menu item: on a LinkedIn company page, reads its Engineering people page and adds your mutuals to the company's Job. */
+export const getMutualsFromPeoplePage = (tab: chrome.tabs.Tab) => getMutualsFrom(tab, { search: false });
 
-/** Menu item: the same, but reads only the people the page already shows (LinkedIn's newer layout has no "Show more"). */
-export const getMutuals = (tab: chrome.tabs.Tab) => getMutualsFrom(tab, { scroll: false });
+/** Menu item: the same, plus people search for the company's engineers in your network, in a background tab. */
+export const getMutualsWithSearch = (tab: chrome.tabs.Tab) => getMutualsFrom(tab, { search: true });
 
-/** Reads what the page shows once its first cards are in, without clicking anything. */
-async function scrapeAsShown(tabId: number, scrape: () => Promise<Person[]>) {
-  for (let i = 0; i < DEFAULT_LOAD_OPTIONS.readyPolls && !(await callPage(tabId, 'count')); i++) await sleep(1000);
-  return { people: await scrape(), complete: true, stopped: false };
+/** Waits for the page's first people cards (LinkedIn renders them after the load), then reads them. */
+async function scrapeWhenReady(tabId: number, company: string, polls: number) {
+  for (let i = 0; i < polls && !(await callPage(tabId, 'count')); i++) await sleep(1000);
+  return (await callPage(tabId, 'scrape', company)) ?? [];
 }
 
-async function getMutualsFrom(tab: chrome.tabs.Tab, { scroll }: { scroll: boolean }) {
+const PEOPLE_PAGE_POLLS = 15;
+const SEARCH_PAGE_POLLS = 8;
+const SEARCH_PAGE_SIZE = 10;
+/** Between search pages, so it reads like someone paging through. */
+const SEARCH_PAGE_GAP_MS = 1500;
+
+/**
+ * Pages through people search in a background tab next to `nextTo`, then closes it. Stops after the first page that
+ * isn't full, since that's the last one.
+ */
+async function searchPeople(
+  companyId: string,
+  company: string,
+  nextTo: chrome.tabs.Tab,
+  onPage: (page: number, found: number) => Promise<void>,
+): Promise<Person[]> {
+  const url = peopleSearchUrl(companyId, 1);
+  const tab = await chrome.tabs.create({ url, active: false, windowId: nextTo.windowId, index: nextTo.index + 1 });
+  const tabId = tab.id!;
+  const found: Person[] = [];
+  try {
+    for (let page = 1; page <= SEARCH_MAX_PAGES; page++) {
+      if (page > 1) {
+        await sleep(SEARCH_PAGE_GAP_MS);
+        await chrome.tabs.update(tabId, { url: peopleSearchUrl(companyId, page) });
+      }
+      await settle(tabId);
+      const people = await scrapeWhenReady(tabId, company, SEARCH_PAGE_POLLS);
+      found.push(...people);
+      await onPage(page, found.length);
+      if (people.length < SEARCH_PAGE_SIZE) break;
+    }
+  } finally {
+    await chrome.tabs.remove(tabId).catch(() => {});
+  }
+  return found;
+}
+
+async function getMutualsFrom(tab: chrome.tabs.Tab, { search }: { search: boolean }) {
   const tabId = tab.id;
   if (tabId === undefined || running.has(tabId)) return;
 
@@ -101,40 +133,33 @@ async function getMutualsFrom(tab: chrome.tabs.Tab, { scroll }: { scroll: boolea
   const token = loaded.settings.capacitiesApiToken;
 
   running.add(tabId);
-  stopRequested.delete(tabId);
   try {
     if (target.kind === 'navigate') {
       await chrome.tabs.update(tabId, { url: target.url });
       await settle(tabId);
     }
-    await show(tabId, { tone: 'busy', heading: 'Loading Engineering people…' });
+    await show(tabId, { tone: 'busy', heading: 'Reading Engineering people…' });
 
-    let company = '';
-    const companyName = async () => (company ||= (await callPage(tabId, 'companyName')) || slugToName(target.slug));
-    let lastDetail = '';
-    const scrape = async () => (await callPage(tabId, 'scrape', await companyName())) ?? [];
-    const { people, complete, stopped } = !scroll
-      ? await scrapeAsShown(tabId, scrape)
-      : await loadAllPeople({
-          count: () => callPage(tabId, 'count'),
-          clickMore: () => callPage(tabId, 'clickMore'),
-          scrape,
-          reload: async () => {
-            await chrome.tabs.reload(tabId);
-            await settle(tabId);
-            lastDetail = ''; // the overlay went with the old page
-          },
-          sleep,
-          shouldStop: () => stopRequested.has(tabId),
-          onProgress: async ({ people, round, attempt }) => {
-            const retry = round > 1 ? `, reload ${round - 1}` : attempt > 1 ? `, try ${attempt}` : '';
-            const detail = `${people} so far${retry}`;
-            if (detail === lastDetail || stopRequested.has(tabId)) return;
-            lastDetail = detail;
-            const actions = people >= STOP_AFTER_PEOPLE ? [stopAction] : undefined;
-            await show(tabId, { tone: 'busy', heading: 'Loading Engineering people…', detail, actions });
-          },
-        });
+    const name = (await callPage(tabId, 'companyName')) || slugToName(target.slug);
+    const fromPage = await scrapeWhenReady(tabId, name, PEOPLE_PAGE_POLLS);
+    let people = fromPage;
+    let source = `${fromPage.length} on the people page`;
+    if (search) {
+      const companyId = await callPage(tabId, 'companyId');
+      if (!companyId) {
+        source += " (no search: the page didn't link to it)";
+      } else {
+        const fromSearch = await searchPeople(companyId, name, tab, (page, found) =>
+          show(tabId, {
+            tone: 'busy',
+            heading: 'Searching LinkedIn…',
+            detail: `${source}, ${found} from search (page ${page} of up to ${SEARCH_MAX_PAGES})`,
+          }),
+        );
+        people = mergePeople(fromPage, fromSearch);
+        source += ` + ${people.length - fromPage.length} more from search`;
+      }
+    }
 
     if (!people.length) {
       return show(tabId, {
@@ -144,13 +169,10 @@ async function getMutualsFrom(tab: chrome.tabs.Tab, { scroll }: { scroll: boolea
       });
     }
 
-    const { markdown, firstDegree, secondDegree } = buildMutualsMarkdown(people, { complete, stopped });
-    const summary =
-      `${secondDegree} 2nd-degree and ${firstDegree} 1st-degree, from ${people.length} people` +
-      (complete ? '' : stopped ? ' (stopped early)' : ' (LinkedIn stopped early)');
+    const { markdown, firstDegree, secondDegree } = buildMutualsMarkdown(people, { complete: true });
+    const summary = `${secondDegree} 2nd-degree and ${firstDegree} 1st-degree, from ${source}`;
 
     await show(tabId, { tone: 'busy', heading: 'Finding the Job in Capacities…', detail: summary });
-    const name = await companyName();
     const saved = await listSavedJobs(chrome.storage.local);
     const matches = await findJobNotes({
       company: name,
@@ -180,7 +202,6 @@ async function getMutualsFrom(tab: chrome.tabs.Tab, { scroll }: { scroll: boolea
     });
   } finally {
     running.delete(tabId);
-    stopRequested.delete(tabId);
   }
 }
 
@@ -226,17 +247,9 @@ async function writeContacts(tabId: number, token: string, note: JobNote, pendin
   }
 }
 
-/** "Okay, that's enough" or a Job picked in the overlay. Returns whether the message was ours. */
+/** A Job picked in the overlay. Returns whether the message was ours. */
 export function onMutualsMessage(message: unknown, sender: chrome.runtime.MessageSender): boolean {
   const m = message as { type?: unknown; objectId?: unknown; force?: unknown } | null;
-  if (m?.type === STOP_MESSAGE && sender.tab?.id !== undefined) {
-    const tabId = sender.tab.id;
-    if (running.has(tabId)) {
-      stopRequested.add(tabId);
-      void show(tabId, { tone: 'busy', heading: 'Stopping…', detail: 'Reading the people loaded so far.' });
-    }
-    return true;
-  }
   if (m?.type !== PICK_MESSAGE || typeof m.objectId !== 'string' || sender.tab?.id === undefined) return false;
   const tabId = sender.tab.id;
   const objectId = m.objectId;
