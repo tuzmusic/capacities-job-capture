@@ -1,11 +1,12 @@
 import { onJobListingMessage, saveJobListing } from '../job-listing-to-capacities/run.ts';
 import { addReachoutsToSheet, copyReachouts, onReachoutsMessage } from '../log-reachouts/run.ts';
-import { onMutualsMessage, scrollPageAndGetMutuals } from '../scroll-page-and-get-mutuals/run.ts';
+import { getMutuals, onMutualsMessage, scrollPageAndGetMutuals } from '../scroll-page-and-get-mutuals/run.ts';
 import { RUN_TASK_MESSAGE, type RunTaskMessage, type TaskId } from './menu.ts';
 
 const TASKS: Record<TaskId, (tab: chrome.tabs.Tab) => Promise<void>> = {
   'job-listing-to-capacities': saveJobListing,
   'scroll-page-and-get-mutuals': scrollPageAndGetMutuals,
+  'get-mutuals': getMutuals,
   'copy-reachouts': copyReachouts,
   'add-reachouts-to-sheet': addReachoutsToSheet,
 };

@@ -22,6 +22,8 @@ block out an evening.
    requirements, and a clean copy of the description.
 2. **Scroll Page & Get Mutuals.** On a LinkedIn company page, loads the full Engineering people list and writes your 1st-
    and 2nd-degree connections into that company's Job, grouped by who can introduce you.
+   **Get Mutuals** does the same with only the people the page already shows, no scrolling or clicking (LinkedIn's
+   Nov 2026 people page has no "Show more" and stops at about 75 people).
 3. **Copy Reachouts.** Turns the LinkedIn profiles open in the current window into rows for your contacts
    spreadsheet, with linked names, ready to paste.
 4. **Add Reachouts to Sheet.** The same rows, written straight into the sheet through a small Apps Script web app
@@ -86,7 +88,8 @@ also get its own shortcut in `chrome://extensions/shortcuts`.
   ```
 
   With 1st-degree people at the company, both lists go under *1st degree* / *2nd degree* bullets. Anyone you'd only
-  reach through a 1st-degree connection at the company is left out, since you'd just ask them.
+  reach through a 1st-degree connection at the company is left out, since you'd just ask them. 2nd-degree people
+  whose card names no mutual go last, under *Mutual not shown*.
 - **Already there:** if the Job already has any of these profiles, nothing is written; the dialog says how many are
   there and has an *Add anyway* button.
 - **Which Job:** Jobs this extension saved for the company (it remembers them in `chrome.storage.local`), plus
