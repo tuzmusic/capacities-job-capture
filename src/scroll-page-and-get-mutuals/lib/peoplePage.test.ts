@@ -88,6 +88,40 @@ describe('scrapePeople', () => {
     document.body.innerHTML = `<main><ul>${jane.replaceAll('org-people-profile-card__profile-info', 'x')}</ul></main>`;
     expect(scrapePeople(document, 'Grafana Labs')).toMatchObject([{ name: 'Jane Doe', degree: '2', mutuals: ['Pat Smith'] }]);
   });
+
+  it('reads the Nov 2026 layout: role=list children with obfuscated classes, skipping sidebar lists', () => {
+    // No whitespace between the degree and the headline, like LinkedIn's: textContent reads "· 2ndPayments Engineer".
+    const newCard = (name: string, slug: string, degree: string, rest: string) => `
+      <div class="b6bax7"><div class="b6blr5">
+        <a class="b6bikq" href="https://www.linkedin.com/in/${slug}/"><figure aria-hidden="true"></figure></a>
+        <a href="https://www.linkedin.com/in/${slug}/"><p>${name}</p></a><span> · ${degree}</span>${rest}
+        <button>Connect</button>
+      </div></div>`;
+    document.body.innerHTML = `
+      <main>
+        <div role="list">
+          ${newCard('Jonathan Butler', 'jonathanbutler7', '2nd', '<p>Payments Engineer</p><p>Tristan is a mutual connection</p>')}
+          ${newCard('Jace Maxfield', 'jacemaxfield', '3rd', '<p>Senior Software Engineer at Weave</p>')}
+        </div>
+        <aside><div role="list"><div><p>Anthropic</p><a href="https://www.linkedin.com/in/jeff/">Jeff</a> follows this page</div></div></aside>
+      </main>`;
+    expect(scrapePeople(document, 'Weave')).toEqual([
+      {
+        name: 'Jonathan Butler',
+        title: 'Payments Engineer',
+        url: 'https://www.linkedin.com/in/jonathanbutler7/',
+        degree: '2',
+        mutuals: ['Tristan'],
+      },
+      {
+        name: 'Jace Maxfield',
+        title: 'Senior Software Engineer',
+        url: 'https://www.linkedin.com/in/jacemaxfield/',
+        degree: '3+',
+        mutuals: [],
+      },
+    ]);
+  });
 });
 
 describe('load more', () => {

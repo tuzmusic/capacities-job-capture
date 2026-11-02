@@ -27,8 +27,15 @@ export function findPeopleCards(doc: Document): Element[] {
   if (cards.length) return cards;
   // Fallback: list items in the main column that link to a profile, outermost only.
   const items = [...doc.querySelectorAll('main li')].filter((li) => li.querySelector(PROFILE_LINK));
-  return items.filter((li) => !items.some((other) => other !== li && other.contains(li)));
+  if (items.length) return items.filter((li) => !items.some((other) => other !== li && other.contains(li)));
+  // The Nov 2026 layout: obfuscated classes, cards are the children of a div[role=list]. The degree ("· 2nd") tells
+  // people apart from the sidebar's lists, which also link to profiles ("Jeff follows this page").
+  return [...doc.querySelectorAll('main [role="list"] > *')].filter(
+    (el) => el.querySelector(PROFILE_LINK) && DEGREE_MARK.test(el.textContent ?? ''),
+  );
 }
+
+const DEGREE_MARK = /[·•]\s*\d(?:st|nd|rd|th)/; // no \b: textContent runs "2nd" into the headline
 
 export function findLoadMoreButton(doc: Document): HTMLButtonElement | null {
   return (

@@ -6,7 +6,7 @@ import { show, sleep, waitForLoad } from '../shared/tabs.ts';
 import peopleScript from './content/people.ts?script&iife';
 import { findJobNotes, type JobNote } from './lib/findJobNotes.ts';
 import { engineeringPeopleTarget, slugToName } from './lib/linkedinUrl.ts';
-import { loadAllPeople } from './lib/loadAllPeople.ts';
+import { DEFAULT_LOAD_OPTIONS, loadAllPeople } from './lib/loadAllPeople.ts';
 import { buildMutualsMarkdown, contactsAlreadyIn, NO_CONTACTS } from './lib/mutualsMarkdown.ts';
 import type { Person } from './lib/peoplePage.ts';
 
@@ -67,7 +67,18 @@ export const PICK_MESSAGE = 'scroll-page-and-get-mutuals:pick';
 const running = new Set<number>();
 
 /** Menu item: on a LinkedIn company page, loads its Engineering people and adds your mutuals to the company's Job. */
-export async function scrollPageAndGetMutuals(tab: chrome.tabs.Tab) {
+export const scrollPageAndGetMutuals = (tab: chrome.tabs.Tab) => getMutualsFrom(tab, { scroll: true });
+
+/** Menu item: the same, but reads only the people the page already shows (LinkedIn's newer layout has no "Show more"). */
+export const getMutuals = (tab: chrome.tabs.Tab) => getMutualsFrom(tab, { scroll: false });
+
+/** Reads what the page shows once its first cards are in, without clicking anything. */
+async function scrapeAsShown(tabId: number, scrape: () => Promise<Person[]>) {
+  for (let i = 0; i < DEFAULT_LOAD_OPTIONS.readyPolls && !(await callPage(tabId, 'count')); i++) await sleep(1000);
+  return { people: await scrape(), complete: true };
+}
+
+async function getMutualsFrom(tab: chrome.tabs.Tab, { scroll }: { scroll: boolean }) {
   const tabId = tab.id;
   if (tabId === undefined || running.has(tabId)) return;
 
@@ -94,24 +105,27 @@ export async function scrollPageAndGetMutuals(tab: chrome.tabs.Tab) {
     let company = '';
     const companyName = async () => (company ||= (await callPage(tabId, 'companyName')) || slugToName(target.slug));
     let lastDetail = '';
-    const { people, complete } = await loadAllPeople({
-      count: () => callPage(tabId, 'count'),
-      clickMore: () => callPage(tabId, 'clickMore'),
-      scrape: async () => (await callPage(tabId, 'scrape', await companyName())) ?? [],
-      reload: async () => {
-        await chrome.tabs.reload(tabId);
-        await settle(tabId);
-        lastDetail = ''; // the overlay went with the old page
-      },
-      sleep,
-      onProgress: async ({ people, round, attempt }) => {
-        const retry = round > 1 ? `, reload ${round - 1}` : attempt > 1 ? `, try ${attempt}` : '';
-        const detail = `${people} so far${retry}`;
-        if (detail === lastDetail) return;
-        lastDetail = detail;
-        await show(tabId, { tone: 'busy', heading: 'Loading Engineering people…', detail });
-      },
-    });
+    const scrape = async () => (await callPage(tabId, 'scrape', await companyName())) ?? [];
+    const { people, complete } = !scroll
+      ? await scrapeAsShown(tabId, scrape)
+      : await loadAllPeople({
+          count: () => callPage(tabId, 'count'),
+          clickMore: () => callPage(tabId, 'clickMore'),
+          scrape,
+          reload: async () => {
+            await chrome.tabs.reload(tabId);
+            await settle(tabId);
+            lastDetail = ''; // the overlay went with the old page
+          },
+          sleep,
+          onProgress: async ({ people, round, attempt }) => {
+            const retry = round > 1 ? `, reload ${round - 1}` : attempt > 1 ? `, try ${attempt}` : '';
+            const detail = `${people} so far${retry}`;
+            if (detail === lastDetail) return;
+            lastDetail = detail;
+            await show(tabId, { tone: 'busy', heading: 'Loading Engineering people…', detail });
+          },
+        });
 
     if (!people.length) {
       return show(tabId, {
@@ -215,7 +229,7 @@ export function onMutualsMessage(message: unknown, sender: chrome.runtime.Messag
     // Only a Job we offered: the page can't steer the write anywhere else.
     const note = pending?.choices.find((c) => c.id === objectId);
     if (!pending || !note) {
-      return show(tabId, { tone: 'error', heading: 'That list has expired', detail: 'Run Scroll Page & Get Mutuals again.' });
+      return show(tabId, { tone: 'error', heading: 'That list has expired', detail: 'Run Get Mutuals again.' });
     }
     const loaded = await loadSettings(chrome.storage.local, ['capacitiesApiToken']);
     if (!loaded.ok) return show(tabId, { tone: 'error', heading: 'Contacts not added', detail: loaded.message });

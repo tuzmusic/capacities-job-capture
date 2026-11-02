@@ -1,9 +1,9 @@
 import { task as jobListing } from '../job-listing-to-capacities/meta.ts';
-import { task as mutuals } from '../scroll-page-and-get-mutuals/meta.ts';
+import { getMutualsTask as getMutuals, task as mutuals } from '../scroll-page-and-get-mutuals/meta.ts';
 import { copyTask as copyReachouts, sheetTask as reachoutsToSheet } from '../log-reachouts/meta.ts';
 
 /** The toolbar menu, in order. Each item comes from a module under src/. */
-export const MENU = [jobListing, mutuals, copyReachouts, reachoutsToSheet] as const;
+export const MENU = [jobListing, mutuals, getMutuals, copyReachouts, reachoutsToSheet] as const;
 
 export type TaskId = (typeof MENU)[number]['id'];
 
