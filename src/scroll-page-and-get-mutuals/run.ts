@@ -63,8 +63,14 @@ interface Pending {
 const pendingKey = (tabId: number) => `mutuals:pending:${tabId}`;
 
 export const PICK_MESSAGE = 'scroll-page-and-get-mutuals:pick';
+export const STOP_MESSAGE = 'scroll-page-and-get-mutuals:stop';
 
 const running = new Set<number>();
+/** Tabs whose loading you cut short from the overlay. */
+const stopRequested = new Set<number>();
+/** Fewer than this isn't worth cutting short, so the button waits until then. */
+const STOP_AFTER_PEOPLE = 50;
+const stopAction: OverlayAction = { label: "Okay, that's enough", message: { type: STOP_MESSAGE } };
 
 /** Menu item: on a LinkedIn company page, loads its Engineering people and adds your mutuals to the company's Job. */
 export async function scrollPageAndGetMutuals(tab: chrome.tabs.Tab) {
@@ -84,6 +90,7 @@ export async function scrollPageAndGetMutuals(tab: chrome.tabs.Tab) {
   const token = loaded.settings.capacitiesApiToken;
 
   running.add(tabId);
+  stopRequested.delete(tabId);
   try {
     if (target.kind === 'navigate') {
       await chrome.tabs.update(tabId, { url: target.url });
@@ -94,7 +101,7 @@ export async function scrollPageAndGetMutuals(tab: chrome.tabs.Tab) {
     let company = '';
     const companyName = async () => (company ||= (await callPage(tabId, 'companyName')) || slugToName(target.slug));
     let lastDetail = '';
-    const { people, complete } = await loadAllPeople({
+    const { people, complete, stopped } = await loadAllPeople({
       count: () => callPage(tabId, 'count'),
       clickMore: () => callPage(tabId, 'clickMore'),
       scrape: async () => (await callPage(tabId, 'scrape', await companyName())) ?? [],
@@ -104,12 +111,14 @@ export async function scrollPageAndGetMutuals(tab: chrome.tabs.Tab) {
         lastDetail = ''; // the overlay went with the old page
       },
       sleep,
+      shouldStop: () => stopRequested.has(tabId),
       onProgress: async ({ people, round, attempt }) => {
         const retry = round > 1 ? `, reload ${round - 1}` : attempt > 1 ? `, try ${attempt}` : '';
         const detail = `${people} so far${retry}`;
-        if (detail === lastDetail) return;
+        if (detail === lastDetail || stopRequested.has(tabId)) return;
         lastDetail = detail;
-        await show(tabId, { tone: 'busy', heading: 'Loading Engineering people…', detail });
+        const actions = people >= STOP_AFTER_PEOPLE ? [stopAction] : undefined;
+        await show(tabId, { tone: 'busy', heading: 'Loading Engineering people…', detail, actions });
       },
     });
 
@@ -121,10 +130,10 @@ export async function scrollPageAndGetMutuals(tab: chrome.tabs.Tab) {
       });
     }
 
-    const { markdown, firstDegree, secondDegree } = buildMutualsMarkdown(people, { complete });
+    const { markdown, firstDegree, secondDegree } = buildMutualsMarkdown(people, { complete, stopped });
     const summary =
       `${secondDegree} 2nd-degree and ${firstDegree} 1st-degree, from ${people.length} people` +
-      (complete ? '' : ' (LinkedIn stopped early)');
+      (complete ? '' : stopped ? ' (stopped early)' : ' (LinkedIn stopped early)');
 
     await show(tabId, { tone: 'busy', heading: 'Finding the Job in Capacities…', detail: summary });
     const name = await companyName();
@@ -157,6 +166,7 @@ export async function scrollPageAndGetMutuals(tab: chrome.tabs.Tab) {
     });
   } finally {
     running.delete(tabId);
+    stopRequested.delete(tabId);
   }
 }
 
@@ -202,9 +212,17 @@ async function writeContacts(tabId: number, token: string, note: JobNote, pendin
   }
 }
 
-/** A Job picked in the overlay. Returns whether the message was ours. */
+/** "Okay, that's enough" or a Job picked in the overlay. Returns whether the message was ours. */
 export function onMutualsMessage(message: unknown, sender: chrome.runtime.MessageSender): boolean {
   const m = message as { type?: unknown; objectId?: unknown; force?: unknown } | null;
+  if (m?.type === STOP_MESSAGE && sender.tab?.id !== undefined) {
+    const tabId = sender.tab.id;
+    if (running.has(tabId)) {
+      stopRequested.add(tabId);
+      void show(tabId, { tone: 'busy', heading: 'Stopping…', detail: 'Reading the people loaded so far.' });
+    }
+    return true;
+  }
   if (m?.type !== PICK_MESSAGE || typeof m.objectId !== 'string' || sender.tab?.id === undefined) return false;
   const tabId = sender.tab.id;
   const objectId = m.objectId;

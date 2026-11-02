@@ -110,4 +110,23 @@ describe('loadAllPeople', () => {
     expect(deps.reload).toHaveBeenCalledOnce();
     expect(result).toMatchObject({ complete: true });
   });
+
+  it('stops when asked and returns who it has so far, marked stopped', async () => {
+    const deps = fakeList({ total: 100 });
+    let progress = 0;
+    deps.onProgress = () => void progress++;
+    const result = await loadAllPeople({ ...deps, shouldStop: () => progress >= 2 });
+    expect(result).toMatchObject({ complete: false, stopped: true });
+    expect(result.people).toHaveLength(30);
+    expect(deps.reload).not.toHaveBeenCalled();
+  });
+
+  it('doesn’t reload after a stop during a stalled round', async () => {
+    let stop = false;
+    const deps = fakeList({ total: 100, clickWorks: () => false });
+    deps.onProgress = () => void (stop = true);
+    const result = await loadAllPeople({ ...deps, shouldStop: () => stop });
+    expect(deps.reload).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ complete: false, stopped: true });
+  });
 });

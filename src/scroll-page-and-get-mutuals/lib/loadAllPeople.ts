@@ -15,6 +15,8 @@ export interface LoadDeps {
   reload: () => Promise<void>;
   sleep: (ms: number) => Promise<void>;
   onProgress?: (progress: LoadProgress) => void | Promise<void>;
+  /** True once you've asked it to stop: it scrapes what's on the page and returns. */
+  shouldStop?: () => boolean;
 }
 
 export interface LoadProgress {
@@ -57,6 +59,8 @@ export interface LoadResult {
   people: Person[];
   /** The list ran out (no more button). False if we gave up, so there may be more people than we got. */
   complete: boolean;
+  /** You stopped it before the list ran out. */
+  stopped: boolean;
 }
 
 export async function loadAllPeople(deps: LoadDeps, options: Partial<LoadOptions> = {}): Promise<LoadResult> {
@@ -69,7 +73,8 @@ export async function loadAllPeople(deps: LoadDeps, options: Partial<LoadOptions
       if (!prev || (!prev.mutuals.length && p.mutuals.length)) seen.set(p.url, p);
     }
   };
-  const result = (complete: boolean): LoadResult => ({ people: [...seen.values()], complete });
+  const stopped = () => deps.shouldStop?.() ?? false;
+  const result = (complete: boolean): LoadResult => ({ people: [...seen.values()], complete, stopped: stopped() });
 
   const waitForCards = async () => {
     for (let i = 0; i < o.readyPolls; i++) {
@@ -79,11 +84,12 @@ export async function loadAllPeople(deps: LoadDeps, options: Partial<LoadOptions
     return false;
   };
 
-  const clickUntilDone = async (round: number, attempt: number): Promise<'complete' | 'stalled'> => {
+  const clickUntilDone = async (round: number, attempt: number): Promise<'complete' | 'stalled' | 'stopped'> => {
     let last = (await deps.count()) ?? 0;
     let stalled = 0;
     let noButton = 0;
     for (let step = 0; step < o.maxStepsPerAttempt; step++) {
+      if (stopped()) return 'stopped';
       const r = await deps.clickMore();
       await deps.sleep(o.clickDelayMs);
       const now = (await deps.count()) ?? last;
@@ -103,13 +109,18 @@ export async function loadAllPeople(deps: LoadDeps, options: Partial<LoadOptions
   };
 
   for (let round = 1; round <= o.reloads + 1; round++) {
+    if (stopped()) break;
     if (round > 1) await deps.reload();
     if (!(await waitForCards())) continue;
     for (let attempt = 1; attempt <= o.attemptsPerRound; attempt++) {
-      if (attempt > 1) await deps.sleep(o.attemptGapMs);
+      if (attempt > 1) {
+        await deps.sleep(o.attemptGapMs);
+        if (stopped()) break;
+      }
       const outcome = await clickUntilDone(round, attempt);
       merge(await deps.scrape().catch(() => []));
       if (outcome === 'complete') return result(true);
+      if (outcome === 'stopped') return result(false);
     }
   }
   return result(false);

@@ -24,7 +24,10 @@ const nameKey = (name: string) => name.replace(/\s+/g, ' ').trim().toLowerCase()
  * With 1st-degree people, both lists sit under "1st degree" / "2nd degree" bullets; with only 2nd-degree people, the
  * mutuals are the top-level bullets.
  */
-export function buildMutualsMarkdown(people: Person[], { complete }: { complete: boolean }): MutualsSummary {
+export function buildMutualsMarkdown(
+  people: Person[],
+  { complete, stopped = false }: { complete: boolean; stopped?: boolean },
+): MutualsSummary {
   const first = people.filter((p) => p.degree === '1');
   const atCompany = new Set(first.map((p) => nameKey(p.name)));
   const groups = new Map<string, Person[]>();
@@ -52,7 +55,8 @@ export function buildMutualsMarkdown(people: Person[], { complete }: { complete:
       : [NO_CONTACTS];
   if (!complete) {
     const n = people.length;
-    lines.push('', `_LinkedIn stopped loading after ${n} ${n === 1 ? 'person' : 'people'}, so there may be more._`);
+    const who = `${n} ${n === 1 ? 'person' : 'people'}`;
+    lines.push('', `_${stopped ? 'Stopped' : 'LinkedIn stopped'} loading after ${who}, so there may be more._`);
   }
 
   return {

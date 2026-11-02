@@ -73,6 +73,11 @@ describe('buildMutualsMarkdown', () => {
     expect(markdown).toContain('stopped loading after 1 person');
   });
 
+  it('says you stopped it, not LinkedIn, when you did', () => {
+    const { markdown } = buildMutualsMarkdown([p('Bo', '2', ['Ann'])], { complete: false, stopped: true });
+    expect(markdown).toContain('_Stopped loading after 1 person, so there may be more._');
+  });
+
   it('escapes brackets in names', () => {
     expect(buildMutualsMarkdown([p('A [she/her]', '2', ['B'])], { complete: true }).markdown).toContain('[A \\[she/her\\]]');
   });
