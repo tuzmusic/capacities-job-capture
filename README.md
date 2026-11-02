@@ -86,7 +86,8 @@ also get its own shortcut in `chrome://extensions/shortcuts`.
   ```
 
   With 1st-degree people at the company, both lists go under *1st degree* / *2nd degree* bullets. Anyone you'd only
-  reach through a 1st-degree connection at the company is left out, since you'd just ask them.
+  reach through a 1st-degree connection at the company is left out, since you'd just ask them. 2nd-degree people
+  whose card names no mutual go last, under *Mutual not shown*.
 - **Already there:** if the Job already has any of these profiles, nothing is written; the dialog says how many are
   there and has an *Add anyway* button.
 - **Which Job:** Jobs this extension saved for the company (it remembers them in `chrome.storage.local`), plus

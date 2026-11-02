@@ -11,7 +11,7 @@ const p = (name: string, degree: Person['degree'], mutuals: string[] = [], title
 });
 
 describe('buildMutualsMarkdown', () => {
-  it('groups 2nd-degree people under each mutual connection, listing them under every one', () => {
+  it('groups 2nd-degree people under each mutual connection, listing them under every one, unnamed ones last', () => {
     const { markdown, secondDegree, firstDegree } = buildMutualsMarkdown(
       [p('Ann', '2', ['Pat Smith']), p('Bo', '3+'), p('Cy', '2', ['Lou', 'Pat Smith']), p('Di', '2', ['Pat Smith'], ''), p('Ed', '2')],
       { complete: true },
@@ -24,9 +24,11 @@ describe('buildMutualsMarkdown', () => {
         '  - [Di](https://www.linkedin.com/in/di)',
         '- Lou',
         '  - [Cy](https://www.linkedin.com/in/cy) - Engineer',
+        '- Mutual not shown',
+        '  - [Ed](https://www.linkedin.com/in/ed) - Engineer',
       ].join('\n'),
     );
-    expect(secondDegree).toBe(3);
+    expect(secondDegree).toBe(4);
     expect(firstDegree).toBe(0);
   });
 
