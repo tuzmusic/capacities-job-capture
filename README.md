@@ -141,7 +141,7 @@ Keys are stored in `chrome.storage.local` on this device. This is a personal, un
 ```bash
 npm test             # vitest + happy-dom, no network or keys needed
 npm run typecheck
-npm run dev          # CRXJS dev build with reload
+npm run dev          # CRXJS dev build into dist/; reload the extension in chrome://extensions to pick up changes
 ```
 
 Each menu item is a module with nothing imported from the other; what they share is in `src/shared/`.
