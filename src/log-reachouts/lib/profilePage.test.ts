@@ -27,7 +27,17 @@ describe('readProfile', () => {
       name: 'Levon Mkrtchyan',
       company: 'Sardine AI',
       headline: 'Senior Software Engineer at Sardine | ex-Stripe',
+      headerCompany: '',
     });
+  });
+
+  it('reads the company next to the header logo, as LinkedIn Secret Weapon does', () => {
+    const doc = page(
+      `<section><h2>Someone Else</h2><figure><img src="https://media.licdn.com/company-logo_100/x"></figure>Wrong Co</section>` +
+        `<section><h2>Levon Mkrtchyan</h2><div><figure><img src="https://media.licdn.com/company-logo_100/y"></figure> Sardine </div></section>`,
+      '(2) Levon Mkrtchyan | LinkedIn',
+    );
+    expect(readProfile(doc).headerCompany).toBe('Sardine');
   });
 
   it('falls back on the first Experience entry: one role', () => {

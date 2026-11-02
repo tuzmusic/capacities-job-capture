@@ -37,11 +37,20 @@ describe('profileUrl', () => {
 describe('rows', () => {
   it('matches the sheet: Company | Name link | Role | Date | Notes | Type', () => {
     const row = toRow(
-      { url: 'https://www.linkedin.com/in/levonmk/', name: 'Levon Mkrtchyan', company: 'Sardine' },
+      { url: 'https://www.linkedin.com/in/levonmk/', name: 'Levon Mkrtchyan', company: 'Stripe' },
+      { company: 'Sardine', type: 'Message', note: 'thanks for the intro' },
       '10/9/2026',
     );
     expect(toTsv([row])).toBe(
-      'Sardine\t=HYPERLINK("https://www.linkedin.com/in/levonmk/","Levon Mkrtchyan")\t\t10/9/2026\t\tConnection Request',
+      'Sardine\t=HYPERLINK("https://www.linkedin.com/in/levonmk/","Levon Mkrtchyan")\t\t10/9/2026\tthanks for the intro\tMessage',
+    );
+  });
+
+  it('uses each person\'s own company when the run has none', () => {
+    const row = toRow({ url: 'https://x/', name: 'A', company: 'Stripe' }, { type: 'Message', note: '' }, '10/9/2026');
+    expect(row[0]).toBe('Stripe');
+    expect(toHtml([{ url: 'https://x/', name: 'A', company: 'A&B' }], { type: 'T', note: '' }, 'd')).toContain(
+      '<tr><td>A&amp;B</td>',
     );
   });
 
@@ -90,11 +99,14 @@ describe('the company', () => {
 
 describe('toHtml', () => {
   it('makes a table with a real link for the name, escaped', () => {
-    const html = toHtml([{ url: 'https://www.linkedin.com/in/a/', name: 'Ben <B> & "Co"', company: '' }], '{input}', '10/14/2026');
+    const html = toHtml([{ url: 'https://www.linkedin.com/in/a/', name: 'Ben <B> & "Co"', company: '' }],
+      { company: '{company}', type: '{type}', note: '{note}' },
+      '10/14/2026',
+    );
     expect(html).toBe(
-      '<meta charset="utf-8"><table><tr><td>{input}</td>' +
+      '<meta charset="utf-8"><table><tr><td>{company}</td>' +
         '<td><a href="https://www.linkedin.com/in/a/">Ben &lt;B&gt; &amp; &quot;Co&quot;</a></td>' +
-        '<td></td><td>10/14/2026</td><td></td><td>Connection Request</td></tr></table>',
+        '<td></td><td>10/14/2026</td><td>{note}</td><td>{type}</td></tr></table>',
     );
   });
 });

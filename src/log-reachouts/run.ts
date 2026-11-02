@@ -1,4 +1,13 @@
+import {
+  appendToSection,
+  datedLine,
+  JOB_SECTION_PROPERTY_IDS,
+  searchObjects,
+  updatePropertiesFromMarkdown,
+} from '../shared/capacities.ts';
+import { listSavedJobs } from '../shared/savedJobs.ts';
 import { loadSettings } from '../shared/settings.ts';
+import { findJobNotes, type JobNote } from '../scroll-page-and-get-mutuals/lib/findJobNotes.ts';
 import { show } from '../shared/tabs.ts';
 import profileScript from './content/profile.ts?script&iife';
 import type { Profile } from './lib/profilePage.ts';
@@ -8,14 +17,17 @@ import {
   mostCommon,
   nameFromTitle,
   profileUrl,
+  REACHOUT_TYPES,
   sheetDate,
   slugToName,
   toHtml,
   toRow,
   toTsv,
   type Reachout,
+  type Shared,
 } from './lib/reachoutRows.ts';
 import { appendToSheet } from './lib/sheetWebhook.ts';
+import type { OverlayAction, OverlayField } from '../shared/overlay.ts';
 
 /** A tab that doesn't answer in this long (frozen, mid-load) is logged from its title alone. */
 const READ_TIMEOUT_MS = 3000;
@@ -110,9 +122,10 @@ async function gather(tab: chrome.tabs.Tab, tabId: number): Promise<Gathered | n
   const reachouts = found.map(({ tab: t, url }, i): Reachout => ({
     url,
     name: profiles[i]?.name || nameFromTitle(t.title ?? ''),
-    company: profiles[i]?.company ?? '',
+    // Their own company, for "Each person's own company": LISW's header-logo read, else the profile's other clues.
+    company: profiles[i]?.headerCompany || profiles[i]?.company || '',
   }));
-  return { reachouts, company: fromCompanyTab || mostCommon(reachouts.map((r) => r.company)) };
+  return { reachouts, company: fromCompanyTab || mostCommon(profiles.map((p) => p?.company ?? '')) };
 }
 
 const MAX_LISTED = 12;
@@ -125,11 +138,33 @@ function describe(reachouts: Reachout[]): string {
   return lines.join('\n');
 }
 
-/** Every row gets the one company: you run this for one company at a time. */
-const rowsFor = (reachouts: Reachout[], company: string) =>
-  reachouts.map((r) => toRow({ ...r, company }, sheetDate(new Date())));
+const rowsFor = (reachouts: Reachout[], shared: Shared) => reachouts.map((r) => toRow(r, shared, sheetDate(new Date())));
 
-/** Menu item: the LinkedIn profiles open in this window → rows on the clipboard, after you check the company. */
+/** The dialog's boxes. Their ids are the `{company}`-style placeholders in the rows, and the keys of `fields`. */
+const fieldsFor = (g: Gathered): OverlayField[] => [
+  { id: 'company', label: 'Company', value: g.company },
+  { id: 'each', label: "Each person's own company", value: '', checkbox: true, disables: 'company' },
+  { id: 'type', label: 'Type', value: REACHOUT_TYPES[0], options: [...REACHOUT_TYPES] },
+  { id: 'note', label: 'Note (optional, on every row)', value: '', placeholder: 'thanks for the x' },
+];
+/** For "Each person's own company": no company placeholder, so each row keeps its person's. */
+const EACH_OWN: Shared = { type: '{type}', note: '{note}' };
+const PLACEHOLDERS: Shared = { ...EACH_OWN, company: '{company}' };
+
+/** Per tab, after Copy Reachouts: how many were copied, the company guess, and (once looked up) the Jobs we offered. */
+interface Copied {
+  count: number;
+  company: string;
+  choices?: JobNote[];
+}
+const copiedKey = (tabId: number) => `reachouts:copied:${tabId}`;
+
+export const COPIED_MESSAGE = 'copy-reachouts:copied';
+export const UPDATE_MESSAGE = 'copy-reachouts:update-capacities';
+
+const FIRST_REACHOUTS = 'First Reachouts';
+
+/** Menu item: the LinkedIn profiles open in this window → rows on the clipboard, after you check the dialog. */
 export async function copyReachouts(tab: chrome.tabs.Tab) {
   const tabId = tab.id;
   if (tabId === undefined) return;
@@ -137,23 +172,31 @@ export async function copyReachouts(tab: chrome.tabs.Tab) {
   if (!gathered) return;
 
   const n = gathered.reachouts.length;
+  await chrome.storage.session.set({ [copiedKey(tabId)]: { count: n, company: gathered.company } satisfies Copied });
   await show(tabId, {
     tone: 'success',
     heading: `${n} reachouts`,
     detail: describe(gathered.reachouts),
-    input: { label: 'Company', value: gathered.company },
-    // The overlay puts the Company box's value where {input} is.
+    fields: fieldsFor(gathered),
+    // The overlay puts each box's value where its {id} is.
     actions: [
       {
         label: `Copy ${n} rows`,
-        copy: toTsv(rowsFor(gathered.reachouts, '{input}')),
-        copyHtml: toHtml(gathered.reachouts, '{input}', sheetDate(new Date())),
+        // Once copied, the overlay offers to update the company's Job.
+        message: { type: COPIED_MESSAGE },
+        copy: toTsv(rowsFor(gathered.reachouts, PLACEHOLDERS)),
+        copyHtml: toHtml(gathered.reachouts, PLACEHOLDERS, sheetDate(new Date())),
+        whenChecked: {
+          field: 'each',
+          copy: toTsv(rowsFor(gathered.reachouts, EACH_OWN)),
+          copyHtml: toHtml(gathered.reachouts, EACH_OWN, sheetDate(new Date())),
+        },
       },
     ],
   });
 }
 
-/** The rows, per tab the overlay is on, waiting for "Add to the sheet". The company comes with the click. */
+/** The rows, per tab the overlay is on, waiting for "Add to the sheet", each with its person's own company. The rest comes with the click. */
 interface Pending {
   rows: string[][];
 }
@@ -169,7 +212,7 @@ const NOT_SET_UP = {
     'Copy Reachouts works without it.',
 } as const;
 
-/** Menu item: the same rows, written into the sheet, after you check the company. */
+/** Menu item: the same rows, written into the sheet, after you check the dialog. */
 export async function addReachoutsToSheet(tab: chrome.tabs.Tab) {
   const tabId = tab.id;
   if (tabId === undefined) return;
@@ -180,22 +223,120 @@ export async function addReachoutsToSheet(tab: chrome.tabs.Tab) {
   if (!gathered) return;
 
   const n = gathered.reachouts.length;
-  await chrome.storage.session.set({ [pendingKey(tabId)]: { rows: rowsFor(gathered.reachouts, '') } satisfies Pending });
+  await chrome.storage.session.set({ [pendingKey(tabId)]: { rows: rowsFor(gathered.reachouts, { type: '', note: '' }) } satisfies Pending });
   await show(tabId, {
     tone: 'success',
     heading: `${n} reachouts`,
     detail: describe(gathered.reachouts),
-    input: { label: 'Company', value: gathered.company },
+    fields: fieldsFor(gathered),
     actions: [{ label: `Add ${n} rows to the sheet`, message: { type: ADD_MESSAGE } }],
   });
 }
 
-/** "Add … to the sheet" clicked in the overlay. Returns whether the message was ours. */
+/** After the copy: finds the company's Job and offers to log the reachouts in it. Quiet if Capacities isn't set up. */
+async function offerCapacitiesUpdate(tabId: number, company: string) {
+  const key = copiedKey(tabId);
+  const copied = (await chrome.storage.session.get(key))[key] as Copied | undefined;
+  const loaded = await loadSettings(chrome.storage.local, ['capacitiesApiToken']);
+  if (!copied || !loaded.ok) return;
+  company ||= copied.company;
+  const heading = `Copied ${copied.count} rows`;
+
+  await show(tabId, { tone: 'busy', heading, detail: 'Finding the Job in Capacities…' });
+  const saved = await listSavedJobs(chrome.storage.local);
+  const matches = company
+    ? await findJobNotes({
+        company,
+        saved,
+        search: (query) => searchObjects({ fetch, token: loaded.settings.capacitiesApiToken, query }),
+      }).catch(() => [] as JobNote[])
+    : [];
+  // Without a match, the most recently saved Jobs instead.
+  const choices = matches.length ? matches : saved.slice(0, 5).map((j) => ({ id: j.objectId, title: j.title }));
+  await chrome.storage.session.set({ [key]: { ...copied, choices } satisfies Copied });
+  if (!choices.length) return show(tabId, { tone: 'success', heading, detail: `No Job found for ${company || 'this company'} in Capacities.` });
+
+  const update = (c: JobNote, label: string): OverlayAction => ({ label, message: { type: UPDATE_MESSAGE, objectId: c.id } });
+  await show(tabId, {
+    tone: 'success',
+    heading,
+    detail:
+      matches.length === 1
+        ? matches[0].title
+        : matches.length
+          ? `Which ${company} Job?`
+          : `No Job found for ${company || 'this company'}. A recent one?`,
+    fields: [
+      { id: 'track', label: 'Track reachouts', value: 'true', checkbox: true },
+      { id: 'status', label: `Move to "${FIRST_REACHOUTS}"`, value: 'true', checkbox: true },
+    ],
+    actions: matches.length === 1 ? [update(matches[0], 'Update Capacities')] : choices.map((c) => update(c, c.title)),
+  });
+}
+
+/** "Update Capacities" clicked: logs the reachouts in the Job's Interactions and/or moves it to First Reachouts. */
+async function updateCapacities(tabId: number, objectId: string, fields: { track: boolean; status: boolean }) {
+  const key = copiedKey(tabId);
+  const copied = (await chrome.storage.session.get(key))[key] as Copied | undefined;
+  // Only a Job we offered: the page can't steer the write anywhere else.
+  const job = copied?.choices?.find((c) => c.id === objectId);
+  if (!copied || !job) {
+    return show(tabId, { tone: 'error', heading: 'That has expired', detail: 'Run Copy Reachouts again.' });
+  }
+  if (!fields.track && !fields.status) return show(tabId, { tone: 'success', heading: 'Nothing to update' });
+  const loaded = await loadSettings(chrome.storage.local, ['capacitiesApiToken']);
+  if (!loaded.ok) return show(tabId, { tone: 'error', heading: 'Capacities not updated', detail: loaded.message });
+  const token = loaded.settings.capacitiesApiToken;
+
+  await show(tabId, { tone: 'busy', heading: `Updating ${job.title}…` });
+  const done: string[] = [];
+  try {
+    if (fields.track) {
+      await appendToSection({
+        fetch,
+        token,
+        id: job.id,
+        propertyId: JOB_SECTION_PROPERTY_IDS.interactions,
+        blocks: [datedLine(new Date(), `${copied.count} reachouts`)],
+      });
+      done.push(`Logged ${copied.count} reachouts`);
+    }
+    if (fields.status) {
+      await updatePropertiesFromMarkdown({ fetch, token, id: job.id, markdown: `---\nstatus: ${JSON.stringify(FIRST_REACHOUTS)}\n---\n` });
+      done.push(`Moved to ${FIRST_REACHOUTS}`);
+    }
+    await chrome.storage.session.remove(key);
+    await show(tabId, { tone: 'success', heading: `Updated ${job.title}`, detail: done.join('\n') });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await show(tabId, {
+      tone: 'error',
+      heading: `Couldn't update ${job.title}`,
+      detail: done.length ? `${done.join('\n')}, then: ${message}` : message,
+    });
+  }
+}
+
+/** Overlay clicks: "Add … to the sheet", a finished copy, or "Update Capacities". Returns whether the message was ours. */
 export function onReachoutsMessage(message: unknown, sender: chrome.runtime.MessageSender): boolean {
-  const m = message as { type?: unknown; input?: unknown } | null;
-  if (m?.type !== ADD_MESSAGE || sender.tab?.id === undefined) return false;
+  const m = message as { type?: unknown; objectId?: unknown; fields?: Record<string, unknown> } | null;
+  if (sender.tab?.id === undefined) return false;
   const tabId = sender.tab.id;
-  const company = typeof m.input === 'string' ? m.input : '';
+  const field = (k: string) => (typeof m?.fields?.[k] === 'string' ? (m.fields[k] as string) : '');
+  if (m?.type === COPIED_MESSAGE) {
+    void offerCapacitiesUpdate(tabId, field('each') ? '' : field('company'));
+    return true;
+  }
+  if (m?.type === UPDATE_MESSAGE && typeof m.objectId === 'string') {
+    void updateCapacities(tabId, m.objectId, { track: !!field('track'), status: !!field('status') });
+    return true;
+  }
+  if (m?.type !== ADD_MESSAGE) return false;
+  const shared: Shared = {
+    company: field('each') ? undefined : field('company'),
+    type: field('type') || REACHOUT_TYPES[0],
+    note: field('note'),
+  };
 
   void (async () => {
     const key = pendingKey(tabId);
@@ -206,7 +347,7 @@ export function onReachoutsMessage(message: unknown, sender: chrome.runtime.Mess
     const loaded = await loadSettings(chrome.storage.local, ['sheetWebhookUrl']);
     if (!loaded.ok) return show(tabId, NOT_SET_UP);
 
-    const rows = pending.rows.map(([, ...rest]) => [company, ...rest]);
+    const rows = pending.rows.map(([own, name, role, date]) => [shared.company ?? own, name, role, date, shared.note, shared.type]);
     await show(tabId, { tone: 'busy', heading: `Adding ${rows.length} rows to the sheet…` });
     try {
       const { added, firstRow } = await appendToSheet({ fetch, url: loaded.settings.sheetWebhookUrl, rows });

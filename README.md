@@ -101,15 +101,19 @@ also get its own shortcut in `chrome://extensions/shortcuts`.
   not your own `/in/me`), all at once, with no navigation or AI.
 - **The dialog** lists who it found and has a **Company** box, since you run this for one company at a time. It's
   pre-filled from the company's LinkedIn tab in the window (its People page first; the page heading, else the tab
-  title, else the URL), or else the company most of the profiles list as current. Fix it if needed, then press the
-  button (or Enter).
+  title, else the URL), or else the company most of the profiles list as current. Or tick **Each person's own
+  company** (for tabs of people at different companies), which greys out the box and gives each row its person's
+  company, read the way LinkedIn Secret Weapon reads it (the name next to the logo in the profile header), falling
+  back on the profile's current company. Below that, **Type** (*Connection Request* or *Message*) and an optional **Note** that goes on every row;
+  Tab in the empty Note takes its *thanks for the x* placeholder and selects the *x* to type over. Fix what's needed,
+  then press the button (or Enter in a text box).
 - **The row** matches the sheet's first six columns, *Company | Name | Role | Date | Notes | Type*:
 
   ```
   Sardine	=HYPERLINK("https://www.linkedin.com/in/levonmk/","Levon Mkrtchyan")		10/9/2026		Connection Request
   ```
 
-  Type is always *Connection Request*. Role and Notes stay blank. A tab that can't
+  Type and Notes come from the dialog. Role stays blank. A tab that can't
   be read (discarded, frozen) still gets a row, named from its tab title.
 - **Copy Reachouts** puts the rows on the clipboard twice over: as an HTML table whose names are real links (what a
   normal paste in Sheets uses, so there's no formula to fix), and as tab-separated text with the HYPERLINK formulas

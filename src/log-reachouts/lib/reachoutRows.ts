@@ -7,8 +7,16 @@ export interface Reachout {
   company: string;
 }
 
-/** The Type column. Every reachout this logs is a connection request. */
-export const CONNECTION_REQUEST = 'Connection Request';
+/** The Type column's choices, the default first. */
+export const REACHOUT_TYPES = ['Connection Request', 'Message'] as const;
+
+/** What every row in one run shares: one kind of reachout and one note, and usually one company. */
+export interface Shared {
+  /** Left out: each row gets its reachout's own company. */
+  company?: string;
+  type: string;
+  note: string;
+}
 
 const isLinkedIn = (host: string) => host === 'linkedin.com' || host.endsWith('.linkedin.com');
 
@@ -76,8 +84,8 @@ const formulaString = (s: string) => `"${s.replaceAll('"', '""')}"`;
 
 export const hyperlink = (url: string, label: string) => `=HYPERLINK(${formulaString(url)},${formulaString(label)})`;
 
-export function toRow(r: Reachout, date: string): string[] {
-  return [r.company, hyperlink(r.url, r.name), '', date, '', CONNECTION_REQUEST];
+export function toRow(r: Reachout, shared: Shared, date: string): string[] {
+  return [shared.company ?? r.company, hyperlink(r.url, r.name), '', date, shared.note, shared.type];
 }
 
 const escapeHtml = (s: string) =>
@@ -85,20 +93,20 @@ const escapeHtml = (s: string) =>
 
 /**
  * The same rows as an HTML table, for the clipboard's text/html. Sheets pastes a table cell by cell and keeps the
- * links, so Name comes out as a linked name with no formula to fix. `company` goes in as is, so a placeholder like
- * `{input}` survives for the overlay to fill (HTML-escaped).
+ * links, so Name comes out as a linked name with no formula to fix. `shared` goes in as is, so placeholders like
+ * `{company}` survive for the overlay to fill (HTML-escaped).
  */
-export function toHtml(reachouts: Reachout[], company: string, date: string): string {
+export function toHtml(reachouts: Reachout[], shared: Shared, date: string): string {
   const cell = (html: string) => `<td>${html}</td>`;
   const rows = reachouts.map(
     (r) =>
       '<tr>' +
-      cell(company) +
+      cell(shared.company ?? escapeHtml(r.company)) +
       cell(`<a href="${escapeHtml(r.url)}">${escapeHtml(r.name)}</a>`) +
       cell('') +
       cell(escapeHtml(date)) +
-      cell('') +
-      cell(CONNECTION_REQUEST) +
+      cell(shared.note) +
+      cell(shared.type) +
       '</tr>',
   );
   return `<meta charset="utf-8"><table>${rows.join('')}</table>`;

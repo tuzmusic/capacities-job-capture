@@ -8,6 +8,8 @@ export interface Profile {
   /** Current company, or '' when the page doesn't say. */
   company: string;
   headline: string;
+  /** The company next to the logo in the profile header, the way LinkedIn Secret Weapon reads it, or ''. */
+  headerCompany: string;
 }
 
 const collapse = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
@@ -51,6 +53,21 @@ function companyFromExperience(doc: Document): string {
   return collapse(second.split('·')[0]);
 }
 
+/**
+ * LinkedIn Secret Weapon's lookup: the company logo whose nearest ancestor with an h2 is the profile header (its h2
+ * is the name from the tab title), then the text right after the logo's figure.
+ */
+function companyFromHeaderLogo(doc: Document): string {
+  const name = collapse(doc.title.split('|')[0].replace(/^\s*\(\d+\+?\)\s*/, ''));
+  if (!name) return '';
+  const logo = [...doc.querySelectorAll('[src*="company-logo"]')].find((img) => {
+    let el = img.parentElement;
+    while (el && !el.querySelector('h2')) el = el.parentElement;
+    return collapse(el?.querySelector('h2')?.textContent) === name;
+  });
+  return collapse(logo?.closest('figure')?.nextSibling?.textContent);
+}
+
 export function readProfile(doc: Document): Profile {
   const { card, name } = topCard(doc);
   const headline = collapse(card?.querySelector('.text-body-medium')?.textContent);
@@ -58,5 +75,6 @@ export function readProfile(doc: Document): Profile {
     name, // the caller falls back on the tab title
     company: companyFromTopCard(doc) || companyFromExperience(doc) || companyFromHeadline(headline),
     headline,
+    headerCompany: companyFromHeaderLogo(doc),
   };
 }
