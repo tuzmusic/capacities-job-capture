@@ -29,12 +29,18 @@ async function request(
 ): Promise<Response> {
   const res = await fetch(`${CAPACITIES_API}${path}`, {
     method: init.method,
+    // Never send your Capacities login cookies (the extension's host permissions allow them): a stale session cookie
+    // makes Capacities answer 401 even when the Bearer token is valid.
+    credentials: 'omit',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     ...('body' in init ? { body: JSON.stringify(init.body) } : {}),
   });
 
   if (res.status === 401 || res.status === 403) {
-    throw new Error('Capacities rejected the API token. Check it in the extension options.');
+    const detail = (await res.text().catch(() => '')).slice(0, 300);
+    throw new Error(
+      `Capacities rejected the API token (${res.status} on ${init.method} ${path.split('?')[0]}: ${detail}). Check it in the extension options.`,
+    );
   }
   if (res.status === 429) throw new Error('Capacities rate limit hit. Try again in a minute.');
   if (!res.ok) {
